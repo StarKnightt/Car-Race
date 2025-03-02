@@ -29,6 +29,7 @@ const RacingGame: React.FC = () => {
   const [nitroLevel, setNitroLevel] = useState(100);
   const [missileCount, setMissileCount] = useState(3);
   const [carColor, setCarColor] = useState(0xff0000);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   useEffect(() => {
     if (!mountRef.current) return;
@@ -81,12 +82,11 @@ const RacingGame: React.FC = () => {
     preloadTextures();
 
     // Create silent audio context to be ready for user interaction
-    let audioContext: AudioContext | null = null;
     try {
-      audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
       // Immediately suspend it until user interaction
-      if (audioContext.state === 'running') {
-        audioContext.suspend().catch(console.error);
+      if (audioContextRef.current.state === 'running') {
+        audioContextRef.current.suspend().catch(console.error);
       }
     } catch (e) {
       console.warn('Audio context not supported:', e);
@@ -97,9 +97,6 @@ const RacingGame: React.FC = () => {
     let engineStarted = false;
 
     try {
-      // Create AudioContext for later use
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-
       // Initialize scene
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(0x87ceeb); // Sky blue background
@@ -248,6 +245,20 @@ const RacingGame: React.FC = () => {
         setNitroLevel(carRef.current.nitroCharge);
         setMissileCount(carRef.current.missileCount);
 
+        // Update engine sound
+        if (carRef.current?.engineSound && carRef.current.engineSound.paused) {
+          try {
+            const playPromise = carRef.current.engineSound.play();
+            if (playPromise !== undefined) {
+              playPromise.catch(error => {
+                console.warn('Failed to play engine sound:', error);
+              });
+            }
+          } catch (e) {
+            console.warn('Error playing engine sound:', e);
+          }
+        }
+
         // Render scene
         rendererRef.current.render(sceneRef.current, cameraRef.current);
         
@@ -257,28 +268,31 @@ const RacingGame: React.FC = () => {
       // Start game with user interaction
       const startGame = async () => {
         // Resume AudioContext if it was suspended and exists
-        if (audioContext) {
+        if (audioContextRef.current) {
           try {
-            await audioContext.resume();
+            await audioContextRef.current.resume();
             console.log('Audio context resumed successfully');
             
+            // Preload audio files after context is resumed
+            preloadAudio();
+            
             // Create a simple startup sound
-            const oscillator = audioContext.createOscillator();
-            const gainNode = audioContext.createGain();
+            const oscillator = audioContextRef.current.createOscillator();
+            const gainNode = audioContextRef.current.createGain();
             
             oscillator.type = 'sine';
-            oscillator.frequency.setValueAtTime(220, audioContext.currentTime);
-            oscillator.frequency.exponentialRampToValueAtTime(880, audioContext.currentTime + 0.1);
-            oscillator.frequency.exponentialRampToValueAtTime(440, audioContext.currentTime + 0.2);
+            oscillator.frequency.setValueAtTime(220, audioContextRef.current.currentTime);
+            oscillator.frequency.exponentialRampToValueAtTime(880, audioContextRef.current.currentTime + 0.1);
+            oscillator.frequency.exponentialRampToValueAtTime(440, audioContextRef.current.currentTime + 0.2);
             
-            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+            gainNode.gain.setValueAtTime(0.3, audioContextRef.current.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContextRef.current.currentTime + 0.3);
             
             oscillator.connect(gainNode);
-            gainNode.connect(audioContext.destination);
+            gainNode.connect(audioContextRef.current.destination);
             
             oscillator.start();
-            oscillator.stop(audioContext.currentTime + 0.3);
+            oscillator.stop(audioContextRef.current.currentTime + 0.3);
           } catch (e) {
             console.warn('Failed to create audio:', e);
           }
@@ -295,16 +309,16 @@ const RacingGame: React.FC = () => {
               playPromise.catch(error => {
                 console.warn('Could not play engine start sound:', error);
                 // Create a fallback sound with Web Audio API
-                playEngineStartFallback(audioContext);
+                playEngineStartFallback(audioContextRef.current);
               });
             }
           } catch (error) {
             console.warn('Error playing engine start sound:', error);
-            playEngineStartFallback(audioContext);
+            playEngineStartFallback(audioContextRef.current);
           }
         } else {
           // No engine start sound available, use fallback
-          playEngineStartFallback(audioContext);
+          playEngineStartFallback(audioContextRef.current);
         }
       };
 
@@ -450,7 +464,7 @@ const RacingGame: React.FC = () => {
         }
 
         mountRef.current?.removeEventListener('click', handleStart);
-        audioContext.close().catch(console.error);
+        audioContextRef.current?.close().catch(console.error);
       };
     } catch (error) {
       console.error('Fatal error initializing the game:', error);
@@ -509,6 +523,60 @@ const RacingGame: React.FC = () => {
     const milliseconds = Math.floor((totalSeconds - Math.floor(totalSeconds)) * 1000);
     
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${milliseconds.toString().padStart(3, '0')}`;
+  };
+
+  // Add this function to preload audio files
+  const preloadAudio = () => {
+    const audioFiles = [
+      '/audio/engine.mp3',
+      '/audio/start.mp3',
+      '/audio/turbo.mp3',
+      '/audio/rev.mp3',
+      '/audio/nitro.mp3',
+      '/audio/missile.mp3',
+      '/audio/crash.mp3'
+    ];
+    
+    // Create audio elements for each file and force preload
+    audioFiles.forEach(file => {
+      try {
+        const audio = new Audio();
+        audio.src = file;
+        audio.preload = 'auto';
+        
+        // Force load by playing at zero volume and immediately pausing
+        audio.volume = 0;
+        const playPromise = audio.play();
+        
+        if (playPromise !== undefined) {
+          playPromise.then(() => {
+            audio.pause();
+            console.log(`Preloaded audio: ${file}`);
+          }).catch(error => {
+            console.warn(`Failed to preload audio: ${file}`, error);
+          });
+        }
+      } catch (e) {
+        console.warn(`Error setting up audio preload for ${file}:`, e);
+      }
+    });
+  };
+
+  // Call this function after user interaction
+  const setupAudio = () => {
+    try {
+      if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume().then(() => {
+          console.log('Audio context resumed successfully');
+          // Preload audio files after context is resumed
+          preloadAudio();
+        }).catch(error => {
+          console.error('Failed to resume audio context:', error);
+        });
+      }
+    } catch (e) {
+      console.error('Error setting up audio:', e);
+    }
   };
 
   return (
