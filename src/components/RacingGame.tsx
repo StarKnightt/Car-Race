@@ -246,13 +246,33 @@ const RacingGame: React.FC = () => {
         setMissileCount(carRef.current.missileCount);
 
         // Update engine sound
-        if (carRef.current?.engineSound && carRef.current.engineSound.paused) {
+        if (carRef.current?.engineSound) {
           try {
-            const playPromise = carRef.current.engineSound.play();
-            if (playPromise !== undefined) {
-              playPromise.catch(error => {
-                console.warn('Failed to play engine sound:', error);
-              });
+            // Check if the engine sound is properly loaded
+            if (carRef.current.engineSound.paused) {
+              // Try to play the engine sound
+              const playPromise = carRef.current.engineSound.play();
+              if (playPromise !== undefined) {
+                playPromise.catch(error => {
+                  console.warn('Failed to play engine sound:', error);
+                  
+                  // If the original source failed, try setting it directly
+                  if (carRef.current && carRef.current.engineSound && 
+                      !carRef.current.engineSound.src.includes('engine-loop')) {
+                    console.log('Trying with direct path for engine sound');
+                    carRef.current.engineSound.src = '/audio/engine-loop.mp3';
+                    
+                    // Try playing again after a short delay
+                    setTimeout(() => {
+                      if (carRef.current?.engineSound) {
+                        carRef.current.engineSound.play().catch(e => 
+                          console.warn('Still failed to play engine sound:', e)
+                        );
+                      }
+                    }, 100);
+                  }
+                });
+              }
             }
           } catch (e) {
             console.warn('Error playing engine sound:', e);
@@ -304,6 +324,11 @@ const RacingGame: React.FC = () => {
         // Try to play the engine start sound immediately upon start
         if (carRef.current?.engineStartSound) {
           try {
+            // Make sure the src is set correctly
+            if (!carRef.current.engineStartSound.src || !carRef.current.engineStartSound.src.includes('engine-start')) {
+              carRef.current.engineStartSound.src = '/audio/engine-start.mp3';
+            }
+            
             const playPromise = carRef.current.engineStartSound.play();
             if (playPromise !== undefined) {
               playPromise.catch(error => {
@@ -350,6 +375,9 @@ const RacingGame: React.FC = () => {
 
       // Add click handler to start game
       const handleStart = () => {
+        // Setup audio first
+        setupAudio();
+        // Then start the game
         startGame().catch(console.error);
         mountRef.current?.removeEventListener('click', handleStart);
       };
@@ -528,13 +556,12 @@ const RacingGame: React.FC = () => {
   // Add this function to preload audio files
   const preloadAudio = () => {
     const audioFiles = [
-      '/audio/engine.mp3',
-      '/audio/start.mp3',
+      '/audio/engine-loop.mp3',
+      '/audio/engine-start.mp3',
       '/audio/turbo.mp3',
-      '/audio/rev.mp3',
+      '/audio/engine-rev.mp3',
       '/audio/nitro.mp3',
-      '/audio/missile.mp3',
-      '/audio/crash.mp3'
+      '/audio/missile.mp3'
     ];
     
     // Create audio elements for each file and force preload
@@ -625,81 +652,8 @@ const RacingGame: React.FC = () => {
               </button>
             </div>
           </div>
-          <div className="mt-4">
-            <label className="block text-sm font-medium mb-2">Car Color</label>
-            <div className="flex space-x-2">
-              {[0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff].map((color) => (
-                <button
-                  key={color}
-                  className={`w-8 h-8 rounded-full ${carColor === color ? 'ring-2 ring-white' : ''}`}
-                  style={{ backgroundColor: `#${color.toString(16).padStart(6, '0')}` }}
-                  onClick={() => {
-                    setCarColor(color);
-                    carRef.current?.setCarColor(color);
-                  }}
-                />
-              ))}
-            </div>
-          </div>
         </div>
       )}
-      
-      {!showControls && (
-        <button 
-          onClick={() => setShowControls(true)}
-          className="absolute top-4 left-4 bg-black bg-opacity-70 text-white p-2 rounded hover:bg-opacity-80 shadow-lg backdrop-blur-sm"
-        >
-          <Maximize2 size={18} />
-        </button>
-      )}
-      
-      {/* Speedometer */}
-      <div className="absolute bottom-4 right-4 bg-black bg-opacity-70 text-white px-4 py-2 rounded-lg shadow-lg backdrop-blur-sm flex items-center">
-        <Gauge size={20} className="mr-2" />
-        <p className="text-xl font-bold">{Math.round(speed)} km/h</p>
-      </div>
-      
-      {/* Lap timer */}
-      <div className="absolute bottom-4 left-4 bg-black bg-opacity-70 text-white px-4 py-2 rounded-lg shadow-lg backdrop-blur-sm">
-        <div className="flex items-center mb-1">
-          <p className="text-sm mr-2">Current Lap:</p>
-          <p className="text-lg font-mono">{formatTime(lapTime)}</p>
-        </div>
-        {bestLapTime !== null && (
-          <div className="flex items-center text-yellow-400">
-            <Trophy size={16} className="mr-2" />
-            <p className="text-sm mr-2">Best Lap:</p>
-            <p className="text-lg font-mono">{formatTime(bestLapTime)}</p>
-          </div>
-        )}
-      </div>
-      
-      <div className="absolute top-4 right-4 bg-black bg-opacity-70 text-white px-3 py-1 rounded shadow-lg backdrop-blur-sm">
-        <p className="text-sm">Camera: {cameraView.charAt(0).toUpperCase() + cameraView.slice(1)}</p>
-      </div>
-
-      {/* Add Nitro Gauge */}
-      <div className="absolute bottom-20 right-4 bg-black bg-opacity-70 text-white px-4 py-2 rounded-lg shadow-lg backdrop-blur-sm">
-        <div className="flex items-center mb-1">
-          <Zap className="mr-2" size={20} color={nitroLevel > 0 ? "#00ff00" : "#ff0000"} />
-          <div className="w-32 h-2 bg-gray-700 rounded">
-            <div 
-              className="h-full bg-blue-500 rounded transition-all duration-200"
-              style={{ width: `${nitroLevel}%` }}
-            />
-          </div>
-        </div>
-        <p className="text-xs text-center mt-1">NITRO (E)</p>
-      </div>
-
-      {/* Add Missile Counter */}
-      <div className="absolute bottom-20 left-4 bg-black bg-opacity-70 text-white px-4 py-2 rounded-lg shadow-lg backdrop-blur-sm">
-        <div className="flex items-center">
-          <Target className="mr-2" size={20} color={missileCount > 0 ? "#ff0000" : "#666666"} />
-          <span className="text-xl font-bold">{missileCount}</span>
-        </div>
-        <p className="text-xs text-center mt-1">MISSILES (F)</p>
-      </div>
     </div>
   );
 };

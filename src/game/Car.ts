@@ -90,29 +90,36 @@ export class Car {
     try {
       const createAudio = (path: string, volume: number, loop: boolean = false): HTMLAudioElement | null => {
         try {
-          const audio = new Audio(path);
+          const audio = new Audio();
           audio.volume = volume;
           audio.loop = loop;
           
           // Force preload
           audio.preload = 'auto';
           
-          // Create a blob URL for better compatibility
-          fetch(path)
-            .then(response => {
-              if (!response.ok) {
-                throw new Error(`Failed to fetch audio: ${path}`);
-              }
-              return response.blob();
-            })
-            .then(blob => {
-              const blobUrl = URL.createObjectURL(blob);
-              audio.src = blobUrl;
-              console.log(`Audio loaded successfully: ${path}`);
-            })
-            .catch(error => {
-              console.warn(`Failed to create blob URL for ${path}:`, error);
-            });
+          // First try direct loading
+          audio.src = path;
+          
+          // Add error handler to try blob URL if direct loading fails
+          audio.onerror = () => {
+            console.warn(`Direct loading failed for ${path}, trying fetch...`);
+            // Create a blob URL for better compatibility
+            fetch(path)
+              .then(response => {
+                if (!response.ok) {
+                  throw new Error(`Failed to fetch audio: ${path}`);
+                }
+                return response.blob();
+              })
+              .then(blob => {
+                const blobUrl = URL.createObjectURL(blob);
+                audio.src = blobUrl;
+                console.log(`Audio loaded successfully via blob: ${path}`);
+              })
+              .catch(error => {
+                console.warn(`Failed to create blob URL for ${path}:`, error);
+              });
+          };
             
           return audio;
         } catch (e) {
@@ -121,11 +128,11 @@ export class Car {
         }
       };
       
-      // Setup all sounds with proper error handling
-      this.engineSound = createAudio('/audio/engine.mp3', 0.4, true);
-      this.engineStartSound = createAudio('/audio/start.mp3', 0.5);
+      // Setup all sounds with proper error handling - update paths to match actual file names
+      this.engineSound = createAudio('/audio/engine-loop.mp3', 0.4, true);
+      this.engineStartSound = createAudio('/audio/engine-start.mp3', 0.5);
       this.turboSound = createAudio('/audio/turbo.mp3', 0.3);
-      this.engineRevSound = createAudio('/audio/rev.mp3', 0.3);
+      this.engineRevSound = createAudio('/audio/engine-rev.mp3', 0.3);
       this.nitroSound = createAudio('/audio/nitro.mp3', 0.4);
       this.missileSound = createAudio('/audio/missile.mp3', 0.5);
       
