@@ -79,8 +79,75 @@ export class Car {
   }
 
   setupSounds() {
-    console.log('Sounds disabled until audio files are added');
-    // No sound initialization for now
+    try {
+      // Use proper paths to the audio files with leading slash
+      try {
+        this.engineSound = new Audio('/audio/engine.mp3');
+        this.engineSound.loop = true;
+        this.engineSound.volume = 0.4; // Lower default volume
+      } catch (e) {
+        console.warn('Failed to load engine sound:', e);
+        this.engineSound = null;
+      }
+
+      try {
+        this.engineStartSound = new Audio('/audio/start.mp3');
+        this.engineStartSound.volume = 0.5;
+      } catch (e) {
+        console.warn('Failed to load engine start sound:', e);
+        this.engineStartSound = null;
+      }
+
+      try {
+        this.engineRevSound = new Audio('/audio/rev.mp3');
+        this.engineRevSound.volume = 0.4;
+      } catch (e) {
+        console.warn('Failed to load engine rev sound:', e);
+        this.engineRevSound = null;
+      }
+
+      try {
+        this.turboSound = new Audio('/audio/turbo.mp3');
+        this.turboSound.volume = 0.3;
+      } catch (e) {
+        console.warn('Failed to load turbo sound:', e);
+        this.turboSound = null;
+      }
+
+      try {
+        this.nitroSound = new Audio('/audio/nitro.mp3');
+        this.nitroSound.volume = 0.4;
+      } catch (e) {
+        console.warn('Failed to load nitro sound:', e);
+        this.nitroSound = null;
+      }
+
+      try {
+        this.missileSound = new Audio('/audio/missile.mp3');
+        this.missileSound.volume = 0.5;
+      } catch (e) {
+        console.warn('Failed to load missile sound:', e);
+        this.missileSound = null;
+      }
+      
+      // Preload sounds
+      this.engineSound?.load();
+      this.engineStartSound?.load();
+      this.engineRevSound?.load();
+      this.turboSound?.load();
+      this.nitroSound?.load();
+      this.missileSound?.load();
+      
+    } catch (e) {
+      console.error('Error in sound setup:', e);
+      // Set all sounds to null to be safe
+      this.engineSound = null;
+      this.engineStartSound = null;
+      this.engineRevSound = null;
+      this.turboSound = null;
+      this.nitroSound = null;
+      this.missileSound = null;
+    }
   }
 
   setCarColor(color: number) {
@@ -327,40 +394,95 @@ export class Car {
     const leftBeam = new THREE.Mesh(headlightBeamGeometry, headlightBeamMaterial);
     leftBeam.position.set(-0.6, 0.5, -2.5);
     leftBeam.rotation.x = Math.PI / 2;
+    leftBeam.visible = false; // Initially hidden
+    leftBeam.userData = { isBeam: true };
     this.mesh.add(leftBeam);
 
     const rightBeam = leftBeam.clone();
     rightBeam.position.x = 0.6;
+    rightBeam.userData = { isBeam: true };
     this.mesh.add(rightBeam);
 
-    // Fix Lensflare creation
+    // Fix Lensflare creation with proper path
     const textureLoader = new THREE.TextureLoader();
     const lensflare = new Lensflare();
-    const lensflareTexture = textureLoader.load('/textures/lensflare/flare.png');
     
-    lensflare.addElement(new LensflareElement(lensflareTexture, 200, 0));
-    lensflare.addElement(new LensflareElement(lensflareTexture, 100, 0.6));
-    lensflare.addElement(new LensflareElement(lensflareTexture, 70, 0.7));
-    
-    // Add to both headlights
-    const lensflare2 = new Lensflare();
-    lensflare2.copy(lensflare);
-    
-    this.mesh.add(lensflare);
-    this.mesh.add(lensflare2);
+    try {
+      textureLoader.load('/textures/particles/flame.png', // Use absolute path
+        texture => {
+          if (texture) {
+            lensflare.addElement(new LensflareElement(texture, 200, 0));
+            lensflare.addElement(new LensflareElement(texture, 100, 0.6));
+            lensflare.addElement(new LensflareElement(texture, 70, 0.7));
+            
+            // Add to both headlights
+            const lensflare2 = new Lensflare();
+            lensflare2.copy(lensflare);
+            
+            // Position the lensflares correctly
+            lensflare.position.set(-0.6, 0.5, -1.9);
+            lensflare2.position.set(0.6, 0.5, -1.9);
+            
+            this.mesh.add(lensflare);
+            this.mesh.add(lensflare2);
+          }
+        },
+        undefined,
+        error => console.warn('Failed to load flare texture:', error)
+      );
+    } catch (e) {
+      console.error('Error creating lens flares:', e);
+    }
   }
 
   toggleHeadlights() {
     this.headlightsOn = !this.headlightsOn;
-    this.mesh.traverse((child) => {
-      if (child instanceof THREE.Mesh && child.userData.isHeadlight) {
-        (child.material as THREE.MeshStandardMaterial).emissiveIntensity = 
-          this.headlightsOn ? 1 : 0;
-      }
-      if (child.userData.isLightCone) {
-        child.visible = this.headlightsOn;
-      }
-    });
+    
+    // Fix headlight toggling by properly traversing the car mesh
+    try {
+      // 1. Update headlight meshes
+      this.mesh.traverse((child) => {
+        if (child instanceof THREE.Mesh && child.userData.isHeadlight) {
+          const material = child.material as THREE.MeshStandardMaterial;
+          material.emissiveIntensity = this.headlightsOn ? 1 : 0;
+        }
+        
+        // 2. Toggle visibility of light cones
+        if (child.userData && child.userData.isLightCone) {
+          child.visible = this.headlightsOn;
+        }
+      });
+      
+      // 3. Update beam visibility - find the child objects that are beams
+      const beams: THREE.Mesh<any, any, any>[] = [];
+      this.mesh.traverse((child) => {
+        // Identify beams by their geometry (cylinder) and material (ShaderMaterial)
+        if (child instanceof THREE.Mesh && 
+            child.geometry instanceof THREE.CylinderGeometry && 
+            child.rotation.x === Math.PI / 2 && 
+            (child.position.z === -2.5 || Math.abs(child.position.z + 2.5) < 0.1)) {
+          beams.push(child);
+        }
+      });
+      
+      // Toggle beam visibility
+      beams.forEach(beam => {
+        beam.visible = this.headlightsOn;
+      });
+      
+    } catch (error) {
+      console.error('Error toggling headlights:', error);
+    }
+    
+    // Optional: Play headlight switch sound
+    try {
+      const clickSound = new Audio();
+      clickSound.src = './audio/click.mp3';
+      clickSound.volume = 0.3;
+      clickSound.play().catch(() => {}); // Ignore errors
+    } catch (e) {
+      // Silent fail for sound
+    }
   }
 
   addTaillights() {
@@ -402,8 +524,8 @@ export class Car {
   createNitroEffect() {
     const particleCount = 500; // More particles
     const textureLoader = new THREE.TextureLoader();
-    const particleTexture = textureLoader.load('/textures/particles/flame.png');
     
+    // Create geometry and basic material first
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(particleCount * 3);
     const colors = new Float32Array(particleCount * 3);
@@ -430,11 +552,53 @@ export class Car {
     geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
     geometry.setAttribute('lifetime', new THREE.BufferAttribute(lifetimes, 1));
 
+    // Use PointsMaterial with better defaults for flame effect
     const material = new THREE.PointsMaterial({
-      color: 0x00ffff,
-      size: 0.1,
-      blending: THREE.AdditiveBlending
+      color: 0xffaa00,
+      size: 0.2,
+      vertexColors: true,
+      blending: THREE.AdditiveBlending,
+      transparent: true,
+      sizeAttenuation: true,
+      depthWrite: false // Prevent particles from blocking each other
     });
+
+    // Load the flame texture from the correct path
+    // Remove the duplicate texture loading code - there were two attempts previously
+    textureLoader.load('/textures/particles/flame.png',
+      texture => {
+        if (texture) {
+          material.map = texture;
+          material.needsUpdate = true;
+          console.log('Successfully loaded flame texture');
+        }
+      },
+      undefined,
+      error => {
+        console.warn('Failed to load flame texture:', error);
+        
+        // Create fallback texture using canvas
+        const canvas = document.createElement('canvas');
+        canvas.width = 32;
+        canvas.height = 32;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          // Create a simple circular gradient for the particle
+          const gradient = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+          gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+          gradient.addColorStop(0.2, 'rgba(255, 200, 0, 0.8)');
+          gradient.addColorStop(0.5, 'rgba(255, 100, 0, 0.4)');
+          gradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
+          
+          ctx.fillStyle = gradient;
+          ctx.fillRect(0, 0, 32, 32);
+          
+          // Use this as fallback
+          material.map = new THREE.CanvasTexture(canvas);
+          material.needsUpdate = true;
+        }
+      }
+    );
 
     // Create exhaust effects
     const particles = new THREE.Points(geometry, material);
@@ -608,16 +772,28 @@ export class Car {
       }
     }
 
-    // Update nitro particles with time uniform
-    this.nitroParticles.forEach(particles => {
-      if (controls.nitro && this.nitroCharge > 0) {
-        particles.visible = true;
-        const material = particles.material as THREE.ShaderMaterial;
-        ((material.uniforms as unknown) as NitroShaderUniforms).time.value = performance.now() * 0.001;
-      } else {
-        particles.visible = false;
+    // Simplify nitro particle update logic - avoid redundancy 
+    this.updateNitroEffect(controls);
+  }
+
+  // New helper method to update particle positions
+  private updateParticlePositions(particles: THREE.Points) {
+    try {
+      const positions = (particles.geometry as THREE.BufferGeometry)
+        .attributes.position.array as Float32Array;
+      
+      for (let i = 0; i < positions.length; i += 3) {
+        positions[i + 2] -= 0.2; // Move particle back
+        if (positions[i + 2] < 0) {
+          positions[i + 2] = 2; // Reset particle position
+          positions[i] = (Math.random() - 0.5) * 0.5;
+          positions[i + 1] = (Math.random() - 0.5) * 0.5;
+        }
       }
-    });
+      particles.geometry.attributes.position.needsUpdate = true;
+    } catch (e) {
+      console.warn('Error updating particle positions:', e);
+    }
   }
 
   updateMissiles(scene?: THREE.Scene) {

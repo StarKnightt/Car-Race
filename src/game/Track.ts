@@ -62,24 +62,64 @@ export class Track {
     const groundGeometry = new THREE.PlaneGeometry(2000, 2000, 256, 256);
     const textureLoader = new THREE.TextureLoader();
     
+    // Create basic material first, then load textures
     const groundMaterial = new THREE.MeshStandardMaterial({
       color: 0x2d5a27,
       roughness: 0.9
     });
-
-    // Add texture repetition
-    groundMaterial.map!.wrapS = groundMaterial.map!.wrapT = THREE.RepeatWrapping;
-    groundMaterial.map!.repeat.set(200, 200);
-    groundMaterial.normalMap!.wrapS = groundMaterial.normalMap!.wrapT = THREE.RepeatWrapping;
-    groundMaterial.normalMap!.repeat.set(200, 200);
-    groundMaterial.roughnessMap!.wrapS = groundMaterial.roughnessMap!.wrapT = THREE.RepeatWrapping;
-    groundMaterial.roughnessMap!.repeat.set(200, 200);
-
+    
+    // Ground mesh creation without depending on textures
     const ground = new THREE.Mesh(groundGeometry, groundMaterial);
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = -0.1;
     ground.receiveShadow = true;
     this.mesh.add(ground);
+
+    // Try to load textures and apply them if successful
+    try {
+      // Use correct paths to the available textures with leading slash
+      textureLoader.load('/textures/ground/Substance_Graph_BaseColor.jpg', 
+        texture => {
+          if (texture) {
+            texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+            texture.repeat.set(200, 200);
+            groundMaterial.map = texture;
+            groundMaterial.needsUpdate = true;
+            console.log('Ground texture loaded successfully');
+          }
+        },
+        undefined,
+        error => console.warn('Failed to load ground texture:', error)
+      );
+      
+      textureLoader.load('/textures/ground/Substance_Graph_Normal.jpg', 
+        texture => {
+          if (texture) {
+            texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+            texture.repeat.set(200, 200);
+            groundMaterial.normalMap = texture;
+            groundMaterial.needsUpdate = true;
+          }
+        },
+        undefined,
+        error => console.warn('Failed to load normal texture:', error)
+      );
+      
+      textureLoader.load('/textures/ground/Substance_Graph_Roughness.jpg', 
+        texture => {
+          if (texture) {
+            texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+            texture.repeat.set(200, 200);
+            groundMaterial.roughnessMap = texture;
+            groundMaterial.needsUpdate = true;
+          }
+        },
+        undefined,
+        error => console.warn('Failed to load roughness texture:', error)
+      );
+    } catch (e) {
+      console.error('Error loading textures:', e);
+    }
 
     // Add mountains in the distance
     this.addMountains();
@@ -134,30 +174,119 @@ export class Track {
   private addTrackSegment(zPosition: number) {
     const segment = new THREE.Group();
     
-    // Create track surface with better detail
+    // Create a procedural track texture
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    let trackTexture: THREE.CanvasTexture | null = null;
+    
+    if (ctx) {
+      // Base asphalt color
+      ctx.fillStyle = '#333333';
+      ctx.fillRect(0, 0, 512, 512);
+      
+      // Add rough asphalt texture
+      for (let i = 0; i < 10000; i++) {
+        const x = Math.random() * 512;
+        const y = Math.random() * 512;
+        const size = Math.random() * 2 + 0.5;
+        ctx.fillStyle = `rgba(20, 20, 20, ${Math.random() * 0.3})`;
+        ctx.fillRect(x, y, size, size);
+      }
+      
+      // Add lane markers
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(256 - 5, 0, 10, 512);
+      
+      // Create dashed side lines
+      for (let y = 0; y < 512; y += 50) {
+        ctx.fillRect(50, y, 10, 30);
+        ctx.fillRect(452, y, 10, 30);
+      }
+      
+      trackTexture = new THREE.CanvasTexture(canvas);
+      trackTexture.wrapS = trackTexture.wrapT = THREE.RepeatWrapping;
+      trackTexture.repeat.set(1, this.SEGMENT_LENGTH / 20);
+    }
+
+    // Create track surface with basic material first
     const trackGeometry = new THREE.PlaneGeometry(20, this.SEGMENT_LENGTH, 40, 200);
     const trackTextureLoader = new THREE.TextureLoader();
     
+    // Create basic material first without textures
     const trackMaterial = new THREE.MeshStandardMaterial({
-      map: trackTextureLoader.load('/textures/track/asphalt_diffuse.jpg'),
-      normalMap: trackTextureLoader.load('/textures/track/asphalt_normal.jpg'),
-      roughnessMap: trackTextureLoader.load('/textures/track/asphalt_roughness.jpg'),
-      displacementMap: trackTextureLoader.load('/textures/track/asphalt_height.jpg'),
-      displacementScale: 0.2,
+      color: 0x333333,
       roughness: 0.7,
       metalness: 0.1
     });
 
-    // Add texture repetition for track
-    trackMaterial.map!.wrapS = trackMaterial.map!.wrapT = THREE.RepeatWrapping;
-    trackMaterial.map!.repeat.set(2, this.SEGMENT_LENGTH / 10);
-
+    // Create the track mesh
     const track = new THREE.Mesh(trackGeometry, trackMaterial);
     track.rotation.x = -Math.PI / 2;
     track.position.z = zPosition;
     track.receiveShadow = true;
     segment.add(track);
-
+    
+    // Try to load textures and apply them if successful
+    try {
+      trackTextureLoader.load('/textures/track/Asphalt_004_COLOR.jpg',
+        texture => {
+          if (texture) {
+            texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+            texture.repeat.set(2, this.SEGMENT_LENGTH / 10);
+            trackMaterial.map = texture;
+            trackMaterial.needsUpdate = true;
+            console.log('Track texture loaded successfully');
+          }
+        },
+        undefined,
+        error => console.warn('Failed to load road texture:', error)
+      );
+      
+      trackTextureLoader.load('/textures/track/Asphalt_004_NRM.jpg',
+        texture => {
+          if (texture) {
+            texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+            texture.repeat.set(2, this.SEGMENT_LENGTH / 10);
+            trackMaterial.normalMap = texture;
+            trackMaterial.needsUpdate = true;
+          }
+        },
+        undefined,
+        error => console.warn('Failed to load road normal texture:', error)
+      );
+      
+      trackTextureLoader.load('/textures/track/Asphalt_004_ROUGH.jpg',
+        texture => {
+          if (texture) {
+            texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+            texture.repeat.set(2, this.SEGMENT_LENGTH / 10);
+            trackMaterial.roughnessMap = texture;
+            trackMaterial.needsUpdate = true;
+          }
+        },
+        undefined,
+        error => console.warn('Failed to load road roughness texture:', error)
+      );
+      
+      trackTextureLoader.load('/textures/track/Asphalt_004_DISP.png',
+        texture => {
+          if (texture) {
+            texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+            texture.repeat.set(2, this.SEGMENT_LENGTH / 10);
+            trackMaterial.displacementMap = texture;
+            trackMaterial.displacementScale = 0.2;
+            trackMaterial.needsUpdate = true;
+          }
+        },
+        undefined,
+        error => console.warn('Failed to load road displacement texture:', error)
+      );
+    } catch (e) {
+      console.error('Error loading track textures:', e);
+    }
+    
     // Add segment details
     this.addSegmentDetails(segment, zPosition);
 
@@ -185,12 +314,54 @@ export class Track {
     // Add barriers and lights for this segment
     this.addBarriers(segment, zPosition);
   }
+
   addBarriers(segment: THREE.Group<THREE.Object3DEventMap>, zPosition: number) {
-    throw new Error('Method not implemented.');
+    const barrierGeometry = new THREE.BoxGeometry(0.5, 1, this.SEGMENT_LENGTH);
+    const barrierMaterial = new THREE.MeshStandardMaterial({
+      color: 0x808080,
+      metalness: 0.7,
+      roughness: 0.3
+    });
+
+    // Left barrier
+    const leftBarrier = new THREE.Mesh(barrierGeometry, barrierMaterial);
+    leftBarrier.position.set(-10, 0.5, zPosition);
+    segment.add(leftBarrier);
+
+    // Right barrier
+    const rightBarrier = new THREE.Mesh(barrierGeometry, barrierMaterial);
+    rightBarrier.position.set(10, 0.5, zPosition);
+    segment.add(rightBarrier);
+
+    // Add barrier lights
+    this.addBarrierLights(segment, zPosition);
   }
 
   addCityscape() {
-    throw new Error('Method not implemented.');
+    const buildingCount = 20;
+    const maxDistance = 100;
+
+    for (let i = 0; i < buildingCount; i++) {
+      const height = 5 + Math.random() * 15;
+      const width = 3 + Math.random() * 5;
+      const depth = 3 + Math.random() * 5;
+
+      const buildingGeometry = new THREE.BoxGeometry(width, height, depth);
+      const buildingMaterial = new THREE.MeshStandardMaterial({
+        color: 0x808080,
+        roughness: 0.7
+      });
+
+      const building = new THREE.Mesh(buildingGeometry, buildingMaterial);
+      
+      // Position buildings on both sides of the track
+      const side = Math.random() > 0.5 ? 1 : -1;
+      const x = side * (20 + Math.random() * maxDistance);
+      const z = (Math.random() - 0.5) * maxDistance * 2;
+      
+      building.position.set(x, height/2, z);
+      this.mesh.add(building);
+    }
   }
 
   private addTrackDetails() {
@@ -203,8 +374,25 @@ export class Track {
     // Add dynamic track elements
     this.addTrackProps();
   }
+
   addTrackProps() {
-    throw new Error('Method not implemented.');
+    // Add track decorations
+    const decorationCount = 10;
+    for (let i = 0; i < decorationCount; i++) {
+      const x = (Math.random() - 0.5) * 30;
+      const z = (Math.random() - 0.5) * this.SEGMENT_LENGTH;
+      
+      // Add random props (like traffic cones, barriers, etc.)
+      const propGeometry = new THREE.ConeGeometry(0.3, 0.8, 8);
+      const propMaterial = new THREE.MeshStandardMaterial({
+        color: 0xff6600,
+        roughness: 0.7
+      });
+      
+      const prop = new THREE.Mesh(propGeometry, propMaterial);
+      prop.position.set(x, 0.4, z);
+      this.mesh.add(prop);
+    }
   }
 
   private addRoadMarkings() {
@@ -317,21 +505,38 @@ export class Track {
     this.addBarrierLights();
   }
 
-  private addBarrierLights() {
-    const stripGeometry = new THREE.BoxGeometry(0.1, 0.1, 100);
+  addBarrierLights(segment?: THREE.Group, zPosition?: number) {
+    // Handle both the older method call pattern and the newer one
+    const isSpecificSegment = segment !== undefined && zPosition !== undefined;
+    
+    // Create a basic emissive material that doesn't depend on textures
+    const stripGeometry = new THREE.BoxGeometry(0.1, 0.1, 
+      isSpecificSegment ? this.SEGMENT_LENGTH : 100);
     const stripMaterial = new THREE.MeshStandardMaterial({
       color: 0x00ff00,
       emissive: 0x00ff00,
       emissiveIntensity: 0.5
     });
 
-    const leftStrip = new THREE.Mesh(stripGeometry, stripMaterial);
-    leftStrip.position.set(-10.25, 1, 0);
-    this.mesh.add(leftStrip);
+    if (isSpecificSegment) {
+      // Add lights to a specific segment
+      const leftStrip = new THREE.Mesh(stripGeometry, stripMaterial);
+      leftStrip.position.set(-10.25, 1, zPosition!);
+      segment!.add(leftStrip);
 
-    const rightStrip = leftStrip.clone();
-    rightStrip.position.set(10.25, 1, 0);
-    this.mesh.add(rightStrip);
+      const rightStrip = leftStrip.clone();
+      rightStrip.position.set(10.25, 1, zPosition!);
+      segment!.add(rightStrip);
+    } else {
+      // Original method without parameters - adding to track mesh directly
+      const leftStrip = new THREE.Mesh(stripGeometry, stripMaterial);
+      leftStrip.position.set(-10.25, 1, 0);
+      this.mesh.add(leftStrip);
+
+      const rightStrip = leftStrip.clone();
+      rightStrip.position.set(10.25, 1, 0);
+      this.mesh.add(rightStrip);
+    }
   }
 
   private addEnvironmentDetails() {

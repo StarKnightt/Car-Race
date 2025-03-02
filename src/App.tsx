@@ -4,6 +4,7 @@ import { Play, Settings, Camera, Trophy } from 'lucide-react';
 
 function App() {
   const [gameStarted, setGameStarted] = useState(false);
+  const [showAudioNote, setShowAudioNote] = useState(true);
 
   if (!gameStarted) {
     return (
@@ -13,6 +14,21 @@ function App() {
           <p className="text-gray-200 mb-8">
             Experience high-speed racing action on a professional Casual track with realistic physics and stunning visuals.
           </p>
+          
+          {showAudioNote && (
+            <div className="bg-blue-500 bg-opacity-30 p-3 rounded-md mb-6">
+              <p className="text-white text-sm">
+                For the best experience, please allow audio permissions when prompted. Click anywhere to start the game.
+                <button 
+                  onClick={() => setShowAudioNote(false)}
+                  className="ml-2 text-blue-300 hover:text-blue-200"
+                >
+                  Dismiss
+                </button>
+              </p>
+            </div>
+          )}
+          
           <div className="space-y-4">
             <button 
               onClick={() => setGameStarted(true)}
