@@ -1,5 +1,20 @@
 import * as THREE from 'three';
+import { Sky } from 'three/examples/jsm/objects/Sky.js';
+import { Lensflare, LensflareElement } from 'three/examples/jsm/objects/Lensflare.js';
 import { GameControls } from './GameControls';
+
+// Custom shader material interface
+interface NitroShaderUniforms {
+  [key: string]: { value: any };
+  time: { value: number };
+  texture: { value: THREE.Texture };
+}
+
+interface BeamShaderUniforms {
+  [uniform: string]: THREE.IUniform<any>;
+  time: { value: number };
+  color: { value: THREE.Color };
+}
 
 export class Car {
   mesh: THREE.Group;
@@ -25,6 +40,10 @@ export class Car {
   missileCount: number;
   missileRechargeTime: number;
   lastMissileTime: number;
+  carColor: number;
+  nitroParticles: THREE.Points[];
+  headlightsOn: boolean;
+  engineStartSound: HTMLAudioElement | null;
 
   constructor() {
     this.mesh = new THREE.Group();
@@ -50,48 +69,29 @@ export class Car {
     this.missileCount = this.maxMissiles;
     this.missileRechargeTime = 5000; // 5 seconds
     this.lastMissileTime = 0;
+    this.carColor = 0xff0000; // Default red
+    this.nitroParticles = [];
+    this.headlightsOn = false;
+    this.engineStartSound = null;
 
     this.setupSounds();  // Setup sounds first
     this.createCar();    // Then create the car
   }
 
   setupSounds() {
-    try {
-      // Engine sound
-      this.engineSound = new Audio('/sounds/engine.mp3');
-      this.engineSound.loop = true;
-      this.engineSound.volume = 0;
+    console.log('Sounds disabled until audio files are added');
+    // No sound initialization for now
+  }
 
-      // Engine rev sound
-      this.engineRevSound = new Audio('/sounds/engineRev.mp3');
-      this.engineRevSound.volume = 0.3;
-
-      // Turbo sound
-      this.turboSound = new Audio('/sounds/turbo.mp3');
-      this.turboSound.volume = 0.4;
-
-      // Nitro sound
-      this.nitroSound = new Audio('/sounds/nitro.mp3');
-      this.nitroSound.volume = 0.3;
-
-      // Missile sound
-      this.missileSound = new Audio('/sounds/missile.mp3');
-      this.missileSound.volume = 0.4;
-
-      // Preload sounds
-      this.engineSound.load();
-      this.engineRevSound?.load();
-      this.turboSound?.load();
-      this.nitroSound.load();
-      this.missileSound?.load();
-    } catch (error) {
-      console.warn('Unable to setup sounds:', error);
-      this.engineSound = null;
-      this.engineRevSound = null;
-      this.turboSound = null;
-      this.nitroSound = null;
-      this.missileSound = null;
-    }
+  setCarColor(color: number) {
+    this.carColor = color;
+    this.mesh.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
+        if (child.userData.isBodyPart) {
+          child.material.color.setHex(color);
+        }
+      }
+    });
   }
 
   createCar() {
@@ -165,6 +165,10 @@ export class Car {
 
     // Position the car
     this.mesh.position.set(0, 0, 0);
+
+    bodyMaterial.userData = { isBodyPart: true };
+    hood.userData = { isBodyPart: true };
+    spoilerWing.userData = { isBodyPart: true };
   }
   
   addDetailedWheels() {
@@ -254,16 +258,109 @@ export class Car {
     const headlightMaterial = new THREE.MeshStandardMaterial({
         color: 0xffffcc,
         emissive: 0xffffcc,
-        emissiveIntensity: 0.5
+        emissiveIntensity: 0
     });
 
     const leftHeadlight = new THREE.Mesh(headlightGeometry, headlightMaterial);
     leftHeadlight.position.set(-0.6, 0.5, -1.9);
+    leftHeadlight.userData = { isHeadlight: true };
     this.mesh.add(leftHeadlight);
+
+    // Add headlight cone
+    const lightConeGeometry = new THREE.ConeGeometry(1, 4, 32);
+    const lightConeMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffffcc,
+      transparent: true,
+      opacity: 0.1,
+      side: THREE.DoubleSide
+    });
+
+    const leftLightCone = new THREE.Mesh(lightConeGeometry, lightConeMaterial);
+    leftLightCone.rotation.x = Math.PI / 2;
+    leftLightCone.position.set(-0.6, 0.5, -3.9);
+    leftLightCone.visible = false;
+    leftLightCone.userData = { isLightCone: true };
+    this.mesh.add(leftLightCone);
 
     const rightHeadlight = new THREE.Mesh(headlightGeometry, headlightMaterial);
     rightHeadlight.position.set(0.6, 0.5, -1.9);
+    rightHeadlight.userData = { isHeadlight: true };
     this.mesh.add(rightHeadlight);
+
+    const rightLightCone = new THREE.Mesh(lightConeGeometry, lightConeMaterial);
+    rightLightCone.rotation.x = Math.PI / 2;
+    rightLightCone.position.set(0.6, 0.5, -3.9);
+    rightLightCone.visible = false;
+    rightLightCone.userData = { isLightCone: true };
+    this.mesh.add(rightLightCone);
+
+    // Add volumetric headlight beams with proper types
+    const headlightBeamGeometry = new THREE.CylinderGeometry(0.1, 2, 10, 32, 1, true);
+    const headlightBeamMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        time: { value: 0 },
+        color: { value: new THREE.Color(0xffffcc) }
+      } as BeamShaderUniforms,
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 color;
+        uniform float time;
+        varying vec2 vUv;
+        
+        void main() {
+          float intensity = pow(1.0 - vUv.y, 2.0) * 0.5;
+          gl_FragColor = vec4(color, intensity);
+        }
+      `,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide
+    });
+
+    // Add headlight beams
+    const leftBeam = new THREE.Mesh(headlightBeamGeometry, headlightBeamMaterial);
+    leftBeam.position.set(-0.6, 0.5, -2.5);
+    leftBeam.rotation.x = Math.PI / 2;
+    this.mesh.add(leftBeam);
+
+    const rightBeam = leftBeam.clone();
+    rightBeam.position.x = 0.6;
+    this.mesh.add(rightBeam);
+
+    // Fix Lensflare creation
+    const textureLoader = new THREE.TextureLoader();
+    const lensflare = new Lensflare();
+    const lensflareTexture = textureLoader.load('/textures/lensflare/flare.png');
+    
+    lensflare.addElement(new LensflareElement(lensflareTexture, 200, 0));
+    lensflare.addElement(new LensflareElement(lensflareTexture, 100, 0.6));
+    lensflare.addElement(new LensflareElement(lensflareTexture, 70, 0.7));
+    
+    // Add to both headlights
+    const lensflare2 = new Lensflare();
+    lensflare2.copy(lensflare);
+    
+    this.mesh.add(lensflare);
+    this.mesh.add(lensflare2);
+  }
+
+  toggleHeadlights() {
+    this.headlightsOn = !this.headlightsOn;
+    this.mesh.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.userData.isHeadlight) {
+        (child.material as THREE.MeshStandardMaterial).emissiveIntensity = 
+          this.headlightsOn ? 1 : 0;
+      }
+      if (child.userData.isLightCone) {
+        child.visible = this.headlightsOn;
+      }
+    });
   }
 
   addTaillights() {
@@ -302,14 +399,63 @@ export class Car {
     this.mesh.add(rightExhaust);
   }
 
+  createNitroEffect() {
+    const particleCount = 500; // More particles
+    const textureLoader = new THREE.TextureLoader();
+    const particleTexture = textureLoader.load('/textures/particles/flame.png');
+    
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(particleCount * 3);
+    const colors = new Float32Array(particleCount * 3);
+    const sizes = new Float32Array(particleCount);
+    const lifetimes = new Float32Array(particleCount);
+
+    // Initialize particle properties
+    for (let i = 0; i < particleCount; i++) {
+      positions[i * 3] = (Math.random() - 0.5) * 0.5;
+      positions[i * 3 + 1] = (Math.random() - 0.5) * 0.5;
+      positions[i * 3 + 2] = Math.random() * 3;
+
+      // Create flame color gradient
+      colors[i * 3] = Math.random();     // R
+      colors[i * 3 + 1] = Math.random() * 0.5; // G
+      colors[i * 3 + 2] = 0.1;           // B
+
+      sizes[i] = Math.random() * 0.2 + 0.1;
+      lifetimes[i] = Math.random();
+    }
+
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+    geometry.setAttribute('lifetime', new THREE.BufferAttribute(lifetimes, 1));
+
+    const material = new THREE.PointsMaterial({
+      color: 0x00ffff,
+      size: 0.1,
+      blending: THREE.AdditiveBlending
+    });
+
+    // Create exhaust effects
+    const particles = new THREE.Points(geometry, material);
+    particles.position.set(0.4, 0.2, 2);
+    this.mesh.add(particles);
+    this.nitroParticles.push(particles);
+
+    const particles2 = particles.clone();
+    particles2.position.set(-0.4, 0.2, 2);
+    this.mesh.add(particles2);
+    this.nitroParticles.push(particles2);
+  }
+
   fireMissile(scene?: THREE.Scene) {
-    if (this.missileCount <= 0) return;
+    if (this.missileCount <= 0 || !scene) return;
     
     const missileGeometry = new THREE.CylinderGeometry(0.05, 0.05, 0.3);
     const missileMaterial = new THREE.MeshStandardMaterial({
-        color: 0xff0000,
-        emissive: 0xff0000,
-        emissiveIntensity: 0.5
+      color: 0xff0000,
+      emissive: 0xff0000,
+      emissiveIntensity: 0.5
     });
 
     const missile = new THREE.Mesh(missileGeometry, missileMaterial);
@@ -320,24 +466,57 @@ export class Car {
     missile.rotation.copy(this.mesh.rotation);
     missile.translateZ(-2);
 
+    // Add missile trail effect
+    const trailGeometry = new THREE.BufferGeometry();
+    const trailMaterial = new THREE.PointsMaterial({
+      color: 0xff4400,
+      size: 0.1,
+      blending: THREE.AdditiveBlending
+    });
+    const trail = new THREE.Points(trailGeometry, trailMaterial);
+    missile.add(trail);
+    
     this.missiles.push(missile);
     this.missileCount--;
     this.lastMissileTime = Date.now();
 
-    // Add missile to scene if scene is provided
-    if (scene) {
-        scene.add(missile);
-    }
+    scene.add(missile);
 
     if (this.missileSound) {
-        this.missileSound.currentTime = 0;
-        this.missileSound.play().catch(err => console.warn('Missile sound playback failed:', err));
+      this.missileSound.currentTime = 0;
+      this.missileSound.play().catch(err => console.warn('Missile sound playback failed:', err));
     }
+  }
 
-    return missile;
+  updateNitroEffect(controls: GameControls) {
+    this.nitroParticles.forEach(particles => {
+      if (controls.nitro && this.nitroCharge > 0) {
+        particles.visible = true;
+        const positions = (particles.geometry as THREE.BufferGeometry)
+          .attributes.position.array as Float32Array;
+        
+        for (let i = 0; i < positions.length; i += 3) {
+          positions[i + 2] -= 0.2; // Move particle back
+          if (positions[i + 2] < 0) {
+            positions[i + 2] = 2; // Reset particle position
+            positions[i] = (Math.random() - 0.5) * 0.5;
+            positions[i + 1] = (Math.random() - 0.5) * 0.5;
+          }
+        }
+        particles.geometry.attributes.position.needsUpdate = true;
+      } else {
+        particles.visible = false;
+      }
+    });
   }
 
   update(controls: GameControls, scene?: THREE.Scene) {
+    // Start engine sound when first moving
+    if (controls.forward && Math.abs(this.speed) < 0.01 && this.engineStartSound) {
+      this.engineStartSound.currentTime = 0;
+      this.engineStartSound.play().catch(console.error);
+    }
+
     // Handle turbo boost
     this.turboBoost = controls.forward && controls.shift;
     const currentMaxSpeed = this.turboBoost ? this.turboSpeed : this.maxSpeed;
@@ -345,7 +524,7 @@ export class Car {
 
     // Handle nitro boost
     if (controls.nitro && this.nitroCharge > 0) {
-      this.speed = Math.min(this.speed + this.turboAcceleration * 1.5, this.turboSpeed * 1.5);
+      this.speed = Math.min(this.speed + this.turboAcceleration * 2.5, this.turboSpeed * 2);
       this.nitroCharge = Math.max(0, this.nitroCharge - 1);
       
       if (this.nitroSound && this.nitroSound.paused) {
@@ -411,7 +590,7 @@ export class Car {
     }
 
     // Update missiles
-    this.updateMissiles();
+    this.updateMissiles(scene);
 
     // Update position and sound
     const movement = this.direction.clone().multiplyScalar(this.speed);
@@ -428,27 +607,47 @@ export class Car {
         this.engineSound.pause();
       }
     }
+
+    // Update nitro particles with time uniform
+    this.nitroParticles.forEach(particles => {
+      if (controls.nitro && this.nitroCharge > 0) {
+        particles.visible = true;
+        const material = particles.material as THREE.ShaderMaterial;
+        ((material.uniforms as unknown) as NitroShaderUniforms).time.value = performance.now() * 0.001;
+      } else {
+        particles.visible = false;
+      }
+    });
   }
-  updateMissiles() {
+
+  updateMissiles(scene?: THREE.Scene) {
     const missileSpeed = 1;
-    for (let i = this.missiles.length - 1; i >= 0; i--) {
-        const missile = this.missiles[i];
-        
-        // Move missile forward
-        missile.translateZ(-missileSpeed);
-        
-        // Remove missile if it's too far
-        if (missile.position.distanceTo(this.mesh.position) > 100) {
-            missile.removeFromParent();  // Remove from scene
-            this.missiles.splice(i, 1);  // Remove from array
-        }
-    }
+    this.missiles.forEach((missile, index) => {
+      missile.translateZ(-missileSpeed);
+      
+      // Update missile trail
+      const trail = missile.children[0] as THREE.Points;
+      const positions = [];
+      for (let i = 0; i < 10; i++) {
+        const pos = missile.position.clone();
+        pos.z += i * 0.1;
+        positions.push(pos.x, pos.y, pos.z);
+      }
+      trail.geometry.setAttribute('position', 
+        new THREE.Float32BufferAttribute(positions, 3));
+      
+      // Remove missile if too far
+      if (missile.position.distanceTo(this.mesh.position) > 100) {
+        scene?.remove(missile);
+        this.missiles.splice(index, 1);
+      }
+    });
 
     // Recharge missiles
     if (this.missileCount < this.maxMissiles && 
         Date.now() - this.lastMissileTime > this.missileRechargeTime) {
-        this.missileCount++;
-        this.lastMissileTime = Date.now();
+      this.missileCount++;
+      this.lastMissileTime = Date.now();
     }
   }
 }

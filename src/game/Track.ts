@@ -1,515 +1,393 @@
 import * as THREE from 'three';
+import { Sky } from 'three/examples/jsm/objects/Sky.js';
 
 export class Track {
+  getSegmentLength(): number {
+    return this.SEGMENT_LENGTH;
+  }
   mesh: THREE.Group;
-  
-  constructor() {
+  startPosition: THREE.Vector3;
+  segments: THREE.Group[];
+  private readonly SEGMENT_LENGTH = 100;
+  private readonly SEGMENTS_TO_KEEP = 3;
+
+  constructor(private scene: THREE.Scene) {
     this.mesh = new THREE.Group();
+    this.startPosition = new THREE.Vector3(0, 0, -35);
+    this.segments = [];
     this.createTrack();
+    this.createEnvironment();
   }
 
-  createTrack() {
-    // Create ground (larger area surrounding the track)
-    const groundGeometry = new THREE.PlaneGeometry(200, 200);
-    const groundMaterial = new THREE.MeshPhongMaterial({ 
-      color: 0x3a3a3a,  // Dark gray for surrounding area
-      side: THREE.DoubleSide 
+  private createTrack() {
+    // Create advanced race track
+    const trackWidth = 20;
+    const trackLength = this.SEGMENT_LENGTH * this.SEGMENTS_TO_KEEP;
+    
+    const trackGeometry = new THREE.PlaneGeometry(trackWidth, trackLength, 200, 200);
+    const trackTextureLoader = new THREE.TextureLoader();
+    
+    // Load high-quality track textures
+    const trackMaterial = new THREE.MeshStandardMaterial({
+      color: 0x333333,
+      roughness: 0.8,
+      metalness: 0.1
     });
+
+    // Add track details
+    this.addTrackDetails();
+  }
+
+  private createEnvironment() {
+    // Create sky with proper implementation
+    const sky = new Sky();
+    sky.scale.setScalar(450000);
+    this.mesh.add(sky);
+
+    // Configure sky parameters
+    const skyUniforms = sky.material.uniforms;
+    skyUniforms['turbidity'].value = 10;
+    skyUniforms['rayleigh'].value = 2;
+    skyUniforms['mieCoefficient'].value = 0.005;
+    skyUniforms['mieDirectionalG'].value = 0.8;
+
+    // Add sun position calculation
+    const sun = new THREE.Vector3();
+    const phi = THREE.MathUtils.degToRad(90 - 2);  // Elevation
+    const theta = THREE.MathUtils.degToRad(180);    // Azimuth
+    sun.setFromSphericalCoords(1, phi, theta);
+    skyUniforms['sunPosition'].value.copy(sun);
+
+    // Create ground with better texturing
+    const groundGeometry = new THREE.PlaneGeometry(2000, 2000, 256, 256);
+    const textureLoader = new THREE.TextureLoader();
+    
+    const groundMaterial = new THREE.MeshStandardMaterial({
+      color: 0x2d5a27,
+      roughness: 0.9
+    });
+
+    // Add texture repetition
+    groundMaterial.map!.wrapS = groundMaterial.map!.wrapT = THREE.RepeatWrapping;
+    groundMaterial.map!.repeat.set(200, 200);
+    groundMaterial.normalMap!.wrapS = groundMaterial.normalMap!.wrapT = THREE.RepeatWrapping;
+    groundMaterial.normalMap!.repeat.set(200, 200);
+    groundMaterial.roughnessMap!.wrapS = groundMaterial.roughnessMap!.wrapT = THREE.RepeatWrapping;
+    groundMaterial.roughnessMap!.repeat.set(200, 200);
+
     const ground = new THREE.Mesh(groundGeometry, groundMaterial);
     ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -0.1;
     ground.receiveShadow = true;
     this.mesh.add(ground);
 
-    // Create race track
-    this.createRaceTrack();
+    // Add mountains in the distance
+    this.addMountains();
     
-    // Add environment objects
-    this.addEnvironmentObjects();
-    
-    // Add track barriers
-    this.addTrackBarriers();
-    
-    // Add skid marks
-    this.addSkidMarks();
-    
-    // Add track decorations
-    this.addTrackDecorations();
+    // Add atmospheric fog for depth
+    this.scene.fog = new THREE.FogExp2(0x88ccee, 0.00125);
+
+    // Create initial track segments
+    for (let i = 0; i < this.SEGMENTS_TO_KEEP; i++) {
+      this.addTrackSegment(i * this.SEGMENT_LENGTH);
+    }
   }
 
-  createRaceTrack() {
-    // Create a custom shape for the track
-    const trackShape = new THREE.Shape();
-    
-    // Create a more complex track shape (figure-8 style)
-    const trackWidth = 12; // Width of the track
-    const trackOuterRadius = 40; // Outer radius
-    const trackInnerRadius = trackOuterRadius - trackWidth; // Inner radius
-    
-    // Create outer track edge (figure-8 shape)
-    trackShape.moveTo(0, -trackOuterRadius);
-    trackShape.bezierCurveTo(
-      trackOuterRadius, -trackOuterRadius,
-      trackOuterRadius, trackOuterRadius,
-      0, trackOuterRadius
-    );
-    trackShape.bezierCurveTo(
-      -trackOuterRadius, trackOuterRadius,
-      -trackOuterRadius, -trackOuterRadius,
-      0, -trackOuterRadius
-    );
-    
-    // Create inner track edge (hole)
-    const holePath = new THREE.Path();
-    holePath.moveTo(0, -trackInnerRadius);
-    holePath.bezierCurveTo(
-      trackInnerRadius, -trackInnerRadius,
-      trackInnerRadius, trackInnerRadius,
-      0, trackInnerRadius
-    );
-    holePath.bezierCurveTo(
-      -trackInnerRadius, trackInnerRadius,
-      -trackInnerRadius, -trackInnerRadius,
-      0, -trackInnerRadius
-    );
-    trackShape.holes.push(holePath);
-    
-    // Create track geometry
-    const trackGeometry = new THREE.ShapeGeometry(trackShape);
-    
-    // Create asphalt texture
-    const textureLoader = new THREE.TextureLoader();
-    const asphaltMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0x1a1a1a,  // Very dark gray for asphalt
+  private addMountains() {
+    const mountainGeometry = new THREE.BufferGeometry();
+    const vertices = [];
+    const mountainCount = 20;
+    const mountainRadius = 1000;
+
+    for (let i = 0; i < mountainCount; i++) {
+      const angle = (i / mountainCount) * Math.PI * 2;
+      const radius = mountainRadius + (Math.random() * 200 - 100);
+      const height = 200 + Math.random() * 300;
+      
+      // Create mountain peaks with multiple vertices
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
+      
+      vertices.push(
+        x, 0, z,
+        x + 50, height, z + 50,
+        x - 50, height, z - 50
+      );
+    }
+
+    const mountainMaterial = new THREE.MeshStandardMaterial({
+      color: 0x4a4a4a,
       roughness: 0.8,
       metalness: 0.2,
-      side: THREE.DoubleSide
+      flatShading: true
     });
-    
-    const track = new THREE.Mesh(trackGeometry, asphaltMaterial);
-    track.rotation.x = -Math.PI / 2;
-    track.position.y = 0.01; // Slightly above ground to prevent z-fighting
-    track.receiveShadow = true;
-    this.mesh.add(track);
-    
-    // Add track markings
-    this.addTrackMarkings(trackOuterRadius, trackInnerRadius, trackWidth);
+
+    mountainGeometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    mountainGeometry.computeVertexNormals();
+
+    const mountains = new THREE.Mesh(mountainGeometry, mountainMaterial);
+    mountains.castShadow = true;
+    mountains.receiveShadow = true;
+    this.mesh.add(mountains);
   }
-  
-  addTrackMarkings(outerRadius: number, innerRadius: number, trackWidth: number) {
-    // Create materials for markings
-    const whiteLineMaterial = new THREE.MeshStandardMaterial({ 
+
+  private addTrackSegment(zPosition: number) {
+    const segment = new THREE.Group();
+    
+    // Create track surface with better detail
+    const trackGeometry = new THREE.PlaneGeometry(20, this.SEGMENT_LENGTH, 40, 200);
+    const trackTextureLoader = new THREE.TextureLoader();
+    
+    const trackMaterial = new THREE.MeshStandardMaterial({
+      map: trackTextureLoader.load('/textures/track/asphalt_diffuse.jpg'),
+      normalMap: trackTextureLoader.load('/textures/track/asphalt_normal.jpg'),
+      roughnessMap: trackTextureLoader.load('/textures/track/asphalt_roughness.jpg'),
+      displacementMap: trackTextureLoader.load('/textures/track/asphalt_height.jpg'),
+      displacementScale: 0.2,
+      roughness: 0.7,
+      metalness: 0.1
+    });
+
+    // Add texture repetition for track
+    trackMaterial.map!.wrapS = trackMaterial.map!.wrapT = THREE.RepeatWrapping;
+    trackMaterial.map!.repeat.set(2, this.SEGMENT_LENGTH / 10);
+
+    const track = new THREE.Mesh(trackGeometry, trackMaterial);
+    track.rotation.x = -Math.PI / 2;
+    track.position.z = zPosition;
+    track.receiveShadow = true;
+    segment.add(track);
+
+    // Add segment details
+    this.addSegmentDetails(segment, zPosition);
+
+    this.segments.push(segment);
+    this.mesh.add(segment);
+  }
+
+  private addSegmentDetails(segment: THREE.Group, zPosition: number) {
+    // Add road markings
+    const markingGeometry = new THREE.PlaneGeometry(0.3, this.SEGMENT_LENGTH);
+    const markingMaterial = new THREE.MeshStandardMaterial({
       color: 0xffffff,
-      roughness: 0.5,
-      side: THREE.DoubleSide 
+      emissive: 0xffffff,
+      emissiveIntensity: 0.5,
+      roughness: 0.4
     });
-    
-    const yellowLineMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0xffcc00,
-      roughness: 0.5,
-      side: THREE.DoubleSide 
-    });
-    
-    // Center dividing line (dashed yellow line)
-    const centerRadius = (outerRadius + innerRadius) / 2;
-    const centerLineShape = new THREE.Shape();
-    centerLineShape.absarc(0, 0, centerRadius, 0, Math.PI * 2, false);
-    
-    const centerLineGeometry = new THREE.ShapeGeometry(centerLineShape);
-    const centerLine = new THREE.Line(
-      new THREE.EdgesGeometry(centerLineGeometry),
-      new THREE.LineDashedMaterial({ 
-        color: 0xffcc00, 
-        dashSize: 2, 
-        gapSize: 2,
-        linewidth: 2
-      })
-    );
+
+    // Center line
+    const centerLine = new THREE.Mesh(markingGeometry, markingMaterial);
     centerLine.rotation.x = -Math.PI / 2;
-    centerLine.position.y = 0.02;
-    this.mesh.add(centerLine);
+    centerLine.position.y = 0.01;
+    centerLine.position.z = zPosition;
+    segment.add(centerLine);
+
+    // Add barriers and lights for this segment
+    this.addBarriers(segment, zPosition);
+  }
+  addBarriers(segment: THREE.Group<THREE.Object3DEventMap>, zPosition: number) {
+    throw new Error('Method not implemented.');
+  }
+
+  addCityscape() {
+    throw new Error('Method not implemented.');
+  }
+
+  private addTrackDetails() {
+    // Add realistic road markings
+    this.addRoadMarkings();
     
-    // Edge lines (solid white)
-    const outerLineShape = new THREE.Shape();
-    outerLineShape.absarc(0, 0, outerRadius - 0.2, 0, Math.PI * 2, false);
+    // Add LED barrier lights
+    this.addBarrierLights();
     
-    const outerLineGeometry = new THREE.ShapeGeometry(outerLineShape);
-    const outerLine = new THREE.Line(
-      new THREE.EdgesGeometry(outerLineGeometry),
-      new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 3 })
-    );
-    outerLine.rotation.x = -Math.PI / 2;
-    outerLine.position.y = 0.02;
-    this.mesh.add(outerLine);
-    
-    const innerLineShape = new THREE.Shape();
-    innerLineShape.absarc(0, 0, innerRadius + 0.2, 0, Math.PI * 2, false);
-    
-    const innerLineGeometry = new THREE.ShapeGeometry(innerLineShape);
-    const innerLine = new THREE.Line(
-      new THREE.EdgesGeometry(innerLineGeometry),
-      new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 3 })
-    );
-    innerLine.rotation.x = -Math.PI / 2;
-    innerLine.position.y = 0.02;
-    this.mesh.add(innerLine);
-    
-    // Start/finish line
-    const startLineGeometry = new THREE.PlaneGeometry(trackWidth, 2);
-    const startLineMaterial = new THREE.MeshStandardMaterial({ 
+    // Add dynamic track elements
+    this.addTrackProps();
+  }
+  addTrackProps() {
+    throw new Error('Method not implemented.');
+  }
+
+  private addRoadMarkings() {
+    // Add dynamic glowing road markings
+    const markingsMaterial = new THREE.MeshStandardMaterial({
       color: 0xffffff,
-      roughness: 0.5,
-      side: THREE.DoubleSide 
+      emissive: 0xffffff,
+      emissiveIntensity: 0.5
     });
+    // ...implement road markings...
+  }
+
+  private addForest() {
+    const treeGeometry = new THREE.ConeGeometry(2, 5, 8);
+    const treeMaterial = new THREE.MeshStandardMaterial({ color: 0x1a472a });
+    const trunkGeometry = new THREE.CylinderGeometry(0.2, 0.2, 2);
+    const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x3d2817 });
+
+    // Create tree template
+    const treeTemplate = new THREE.Group();
+    const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+    trunk.position.y = 1;
+    treeTemplate.add(trunk);
     
+    const leaves = new THREE.Mesh(treeGeometry, treeMaterial);
+    leaves.position.y = 4;
+    treeTemplate.add(leaves);
+
+    // Add trees on both sides
+    for (let z = -100; z <= 100; z += 10) {
+      for (let x = 15; x <= 50; x += 5) {
+        // Add trees with random variations
+        const leftTree = treeTemplate.clone();
+        leftTree.position.set(-x, 0, z);
+        leftTree.rotation.y = Math.random() * Math.PI;
+        leftTree.scale.setScalar(0.5 + Math.random() * 0.5);
+        this.mesh.add(leftTree);
+
+        const rightTree = treeTemplate.clone();
+        rightTree.position.set(x, 0, z);
+        rightTree.rotation.y = Math.random() * Math.PI;
+        rightTree.scale.setScalar(0.5 + Math.random() * 0.5);
+        this.mesh.add(rightTree);
+      }
+    }
+  }
+
+  updateInfiniteTrack(playerPosition: THREE.Vector3): boolean {
+    // Check if player has moved past a segment
+    if (playerPosition.z < -this.SEGMENT_LENGTH) {
+      // Remove oldest segment
+      const oldSegment = this.segments.shift();
+      if (oldSegment) {
+        this.mesh.remove(oldSegment);
+      }
+
+      // Add new segment ahead
+      const lastSegment = this.segments[this.segments.length - 1];
+      const newZ = lastSegment ? lastSegment.position.z + this.SEGMENT_LENGTH : 0;
+      this.addTrackSegment(newZ);
+
+      // Reset player Z position
+      playerPosition.z += this.SEGMENT_LENGTH;
+      return true;
+    }
+    return false;
+  }
+
+  private addTrackMarkings() {
+    const lineGeometry = new THREE.PlaneGeometry(0.5, 100);
+    const lineMaterial = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.5
+    });
+
+    // Center line
+    const centerLine = new THREE.Mesh(lineGeometry, lineMaterial);
+    centerLine.rotation.x = -Math.PI / 2;
+    centerLine.position.y = 0.01;
+    this.mesh.add(centerLine);
+
+    // Side lines
+    const leftLine = centerLine.clone();
+    leftLine.position.x = -9;
+    this.mesh.add(leftLine);
+
+    const rightLine = centerLine.clone();
+    rightLine.position.x = 9;
+    this.mesh.add(rightLine);
+  }
+
+  private addModernBarriers() {
+    const barrierGeometry = new THREE.BoxGeometry(0.5, 1, 100);
+    const barrierTexture = new THREE.TextureLoader().load('/textures/barrier.jpg');
+    const barrierMaterial = new THREE.MeshStandardMaterial({
+      map: barrierTexture,
+      roughness: 0.7,
+      metalness: 0.3
+    });
+
+    const leftBarrier = new THREE.Mesh(barrierGeometry, barrierMaterial);
+    leftBarrier.position.set(-10.25, 0.5, 0);
+    this.mesh.add(leftBarrier);
+
+    const rightBarrier = leftBarrier.clone();
+    rightBarrier.position.set(10.25, 0.5, 0);
+    this.mesh.add(rightBarrier);
+
+    // Add glowing strip on barriers
+    this.addBarrierLights();
+  }
+
+  private addBarrierLights() {
+    const stripGeometry = new THREE.BoxGeometry(0.1, 0.1, 100);
+    const stripMaterial = new THREE.MeshStandardMaterial({
+      color: 0x00ff00,
+      emissive: 0x00ff00,
+      emissiveIntensity: 0.5
+    });
+
+    const leftStrip = new THREE.Mesh(stripGeometry, stripMaterial);
+    leftStrip.position.set(-10.25, 1, 0);
+    this.mesh.add(leftStrip);
+
+    const rightStrip = leftStrip.clone();
+    rightStrip.position.set(10.25, 1, 0);
+    this.mesh.add(rightStrip);
+  }
+
+  private addEnvironmentDetails() {
+    // Add reflective bollards
+    this.addBollards();
+    
+    // Add distance markers
+    this.addDistanceMarkers();
+  }
+
+  private addBollards() {
+    const bollardGeometry = new THREE.CylinderGeometry(0.1, 0.1, 0.5, 8);
+    const bollardMaterial = new THREE.MeshStandardMaterial({
+      color: 0xcccccc,
+      metalness: 0.8,
+      roughness: 0.2
+    });
+
+    for (let z = -45; z <= 45; z += 5) {
+      const leftBollard = new THREE.Mesh(bollardGeometry, bollardMaterial);
+      leftBollard.position.set(-9.5, 0.25, z);
+      this.mesh.add(leftBollard);
+
+      const rightBollard = leftBollard.clone();
+      rightBollard.position.x = 9.5;
+      this.mesh.add(rightBollard);
+    }
+  }
+
+  private addDistanceMarkers() {
+    const markerGeometry = new THREE.PlaneGeometry(1, 0.5);
+    const markerMaterial = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.8
+    });
+
+    for (let z = -40; z <= 40; z += 10) {
+      const marker = new THREE.Mesh(markerGeometry, markerMaterial);
+      marker.rotation.x = -Math.PI / 2;
+      marker.rotation.z = Math.PI / 2;
+      marker.position.set(-9, 0.01, z);
+      this.mesh.add(marker);
+    }
+  }
+
+  private addStartLine() {
+    const startLineGeometry = new THREE.PlaneGeometry(20, 2);
+    const startLineMaterial = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.5
+    });
+
     const startLine = new THREE.Mesh(startLineGeometry, startLineMaterial);
     startLine.rotation.x = -Math.PI / 2;
-    startLine.position.set(0, 0.02, -outerRadius + trackWidth/2);
-    startLine.receiveShadow = true;
+    startLine.position.set(0, 0.01, -40);
     this.mesh.add(startLine);
-    
-    // Add checkered pattern to start/finish line
-    const checkerCount = 8;
-    const checkerSize = trackWidth / checkerCount;
-    
-    for (let i = 0; i < checkerCount; i++) {
-      if (i % 2 === 0) continue; // Skip every other square
-      
-      const checkerGeometry = new THREE.PlaneGeometry(checkerSize, 2);
-      const checkerMaterial = new THREE.MeshStandardMaterial({ 
-        color: 0x000000,
-        roughness: 0.5,
-        side: THREE.DoubleSide 
-      });
-      
-      const checker = new THREE.Mesh(checkerGeometry, checkerMaterial);
-      checker.rotation.x = -Math.PI / 2;
-      const xPos = -trackWidth/2 + checkerSize/2 + i * checkerSize;
-      checker.position.set(xPos, 0.025, -outerRadius + trackWidth/2);
-      checker.receiveShadow = true;
-      this.mesh.add(checker);
-    }
-  }
-  
-  addTrackBarriers() {
-    // Create barrier material
-    const barrierMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0xdd0000, // Red and white barriers
-      roughness: 0.7,
-      metalness: 0.3
-    });
-    
-    const stripeMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0xffffff,
-      roughness: 0.7,
-      metalness: 0.3
-    });
-    
-    // Outer track barriers
-    const outerRadius = 40;
-    const segments = 40;
-    const barrierHeight = 1;
-    const barrierDepth = 0.5;
-    
-    for (let i = 0; i < segments; i++) {
-      const angle = (i / segments) * Math.PI * 2;
-      const nextAngle = ((i + 1) / segments) * Math.PI * 2;
-      
-      const x1 = Math.sin(angle) * outerRadius;
-      const z1 = Math.cos(angle) * outerRadius;
-      const x2 = Math.sin(nextAngle) * outerRadius;
-      const z2 = Math.cos(nextAngle) * outerRadius;
-      
-      // Calculate length and rotation for this barrier segment
-      const length = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(z2 - z1, 2));
-      const rotation = Math.atan2(x2 - x1, z2 - z1);
-      
-      // Create barrier segment
-      const barrierGeometry = new THREE.BoxGeometry(length, barrierHeight, barrierDepth);
-      const barrier = new THREE.Mesh(barrierGeometry, i % 2 === 0 ? barrierMaterial : stripeMaterial);
-      
-      // Position at midpoint of the segment
-      barrier.position.set((x1 + x2) / 2, barrierHeight / 2, (z1 + z2) / 2);
-      barrier.rotation.y = rotation;
-      
-      barrier.castShadow = true;
-      barrier.receiveShadow = true;
-      this.mesh.add(barrier);
-    }
-    
-    // Inner track barriers
-    const innerRadius = 28;
-    
-    for (let i = 0; i < segments; i++) {
-      const angle = (i / segments) * Math.PI * 2;
-      const nextAngle = ((i + 1) / segments) * Math.PI * 2;
-      
-      const x1 = Math.sin(angle) * innerRadius;
-      const z1 = Math.cos(angle) * innerRadius;
-      const x2 = Math.sin(nextAngle) * innerRadius;
-      const z2 = Math.cos(nextAngle) * innerRadius;
-      
-      // Calculate length and rotation for this barrier segment
-      const length = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(z2 - z1, 2));
-      const rotation = Math.atan2(x2 - x1, z2 - z1);
-      
-      // Create barrier segment
-      const barrierGeometry = new THREE.BoxGeometry(length, barrierHeight, barrierDepth);
-      const barrier = new THREE.Mesh(barrierGeometry, i % 2 === 0 ? barrierMaterial : stripeMaterial);
-      
-      // Position at midpoint of the segment
-      barrier.position.set((x1 + x2) / 2, barrierHeight / 2, (z1 + z2) / 2);
-      barrier.rotation.y = rotation;
-      
-      barrier.castShadow = true;
-      barrier.receiveShadow = true;
-      this.mesh.add(barrier);
-    }
-  }
-  
-  addSkidMarks() {
-    // Add some random skid marks on the track for visual effect
-    const skidMarkMaterial = new THREE.MeshBasicMaterial({ 
-      color: 0x111111,
-      transparent: true,
-      opacity: 0.7,
-      side: THREE.DoubleSide
-    });
-    
-    const skidMarkPositions = [
-      { x: 30, z: 10, rotation: Math.PI / 4, length: 8 },
-      { x: -25, z: 15, rotation: -Math.PI / 3, length: 10 },
-      { x: 0, z: -35, rotation: Math.PI / 8, length: 12 },
-      { x: 15, z: -20, rotation: -Math.PI / 6, length: 7 },
-      { x: -15, z: -30, rotation: Math.PI / 5, length: 9 }
-    ];
-    
-    skidMarkPositions.forEach(mark => {
-      const skidMarkGeometry = new THREE.PlaneGeometry(mark.length, 0.5);
-      const skidMark = new THREE.Mesh(skidMarkGeometry, skidMarkMaterial);
-      skidMark.rotation.x = -Math.PI / 2;
-      skidMark.rotation.z = mark.rotation;
-      skidMark.position.set(mark.x, 0.02, mark.z);
-      this.mesh.add(skidMark);
-    });
-  }
-  
-  addTrackDecorations() {
-    // Add grandstands
-    this.addGrandstand(0, -50, Math.PI);
-    this.addGrandstand(-50, 0, Math.PI / 2);
-    this.addGrandstand(50, 0, -Math.PI / 2);
-    
-    // Add billboards
-    this.addBillboard(30, 50, 0, "RACING");
-    this.addBillboard(-30, 50, 0, "CHAMPIONS");
-    this.addBillboard(0, -50, Math.PI, "FINISH LINE");
-    
-    // Add some trees and obstacles
-    this.addEnvironmentObjects();
-  }
-  
-  addGrandstand(x: number, z: number, rotation: number) {
-    const grandstand = new THREE.Group();
-    
-    // Base platform
-    const baseGeometry = new THREE.BoxGeometry(20, 1, 10);
-    const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x888888 });
-    const base = new THREE.Mesh(baseGeometry, baseMaterial);
-    base.position.y = 0.5;
-    base.castShadow = true;
-    base.receiveShadow = true;
-    grandstand.add(base);
-    
-    // Seats (rows)
-    const seatRowMaterial = new THREE.MeshStandardMaterial({ color: 0x3366cc });
-    const seatCount = 5;
-    
-    for (let i = 0; i < seatCount; i++) {
-      const rowGeometry = new THREE.BoxGeometry(20, 0.5, 1.5);
-      const row = new THREE.Mesh(rowGeometry, seatRowMaterial);
-      row.position.set(0, 1 + i * 1, -3 + i * 1.5);
-      row.castShadow = true;
-      row.receiveShadow = true;
-      grandstand.add(row);
-    }
-    
-    // Add some spectators (simplified as colored boxes)
-    const spectatorColors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
-    const spectatorCount = 30;
-    
-    for (let i = 0; i < spectatorCount; i++) {
-      const row = Math.floor(Math.random() * seatCount);
-      const position = -9 + Math.random() * 18;
-      
-      const spectatorGeometry = new THREE.BoxGeometry(0.8, 1, 0.8);
-      const spectatorMaterial = new THREE.MeshStandardMaterial({ 
-        color: spectatorColors[Math.floor(Math.random() * spectatorColors.length)] 
-      });
-      
-      const spectator = new THREE.Mesh(spectatorGeometry, spectatorMaterial);
-      spectator.position.set(position, 1.5 + row * 1, -3 + row * 1.5);
-      spectator.castShadow = true;
-      spectator.receiveShadow = true;
-      grandstand.add(spectator);
-    }
-    
-    // Position and rotate the grandstand
-    grandstand.position.set(x, 0, z);
-    grandstand.rotation.y = rotation;
-    this.mesh.add(grandstand);
-  }
-  
-  addBillboard(x: number, z: number, rotation: number, text: string) {
-    const billboard = new THREE.Group();
-    
-    // Billboard structure
-    const postGeometry = new THREE.CylinderGeometry(0.5, 0.5, 8, 8);
-    const postMaterial = new THREE.MeshStandardMaterial({ color: 0x888888 });
-    
-    const post1 = new THREE.Mesh(postGeometry, postMaterial);
-    post1.position.set(-4, 4, 0);
-    post1.castShadow = true;
-    post1.receiveShadow = true;
-    billboard.add(post1);
-    
-    const post2 = new THREE.Mesh(postGeometry, postMaterial);
-    post2.position.set(4, 4, 0);
-    post2.castShadow = true;
-    post2.receiveShadow = true;
-    billboard.add(post2);
-    
-    // Billboard panel
-    const panelGeometry = new THREE.BoxGeometry(10, 3, 0.2);
-    const panelMaterial = new THREE.MeshStandardMaterial({ color: 0x222222 });
-    const panel = new THREE.Mesh(panelGeometry, panelMaterial);
-    panel.position.set(0, 6, 0);
-    panel.castShadow = true;
-    panel.receiveShadow = true;
-    billboard.add(panel);
-    
-    // Position and rotate the billboard
-    billboard.position.set(x, 0, z);
-    billboard.rotation.y = rotation;
-    this.mesh.add(billboard);
-  }
-  
-  addEnvironmentObjects() {
-    // Add trees around the track
-    const treePositions = [
-      { x: -60, z: -60 }, { x: -55, z: -50 }, { x: -65, z: -40 },
-      { x: -60, z: 60 }, { x: -50, z: 55 }, { x: -40, z: 65 },
-      { x: 60, z: -60 }, { x: 55, z: -50 }, { x: 65, z: -40 },
-      { x: 60, z: 60 }, { x: 50, z: 55 }, { x: 40, z: 65 },
-      { x: 0, z: -65 }, { x: 0, z: 65 }, { x: -65, z: 0 }, { x: 65, z: 0 }
-    ];
-    
-    treePositions.forEach(pos => {
-      this.createTree(pos.x, pos.z);
-    });
-    
-    // Add tire stacks as obstacles
-    const tireStackPositions = [
-      { x: 35, z: 35 }, { x: -35, z: 35 }, { x: 35, z: -35 }, { x: -35, z: -35 },
-      { x: 0, z: 45 }, { x: 0, z: -45 }, { x: 45, z: 0 }, { x: -45, z: 0 }
-    ];
-    
-    tireStackPositions.forEach(pos => {
-      this.createTireStack(pos.x, pos.z);
-    });
-  }
-  
-  createTree(x: number, z: number) {
-    const tree = new THREE.Group();
-    
-    // Tree trunk
-    const trunkGeometry = new THREE.CylinderGeometry(0.5, 0.7, 4, 8);
-    const trunkMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0x8B4513,
-      roughness: 0.9
-    });
-    const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
-    trunk.position.y = 2;
-    trunk.castShadow = true;
-    trunk.receiveShadow = true;
-    tree.add(trunk);
-    
-    // Tree foliage (multiple layers for more realistic look)
-    const foliageMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0x2E8B57,
-      roughness: 0.8
-    });
-    
-    const foliageGeometry1 = new THREE.ConeGeometry(3, 4, 8);
-    const foliage1 = new THREE.Mesh(foliageGeometry1, foliageMaterial);
-    foliage1.position.y = 5;
-    foliage1.castShadow = true;
-    foliage1.receiveShadow = true;
-    tree.add(foliage1);
-    
-    const foliageGeometry2 = new THREE.ConeGeometry(2.5, 3, 8);
-    const foliage2 = new THREE.Mesh(foliageGeometry2, foliageMaterial);
-    foliage2.position.y = 7;
-    foliage2.castShadow = true;
-    foliage2.receiveShadow = true;
-    tree.add(foliage2);
-    
-    const foliageGeometry3 = new THREE.ConeGeometry(1.8, 2.5, 8);
-    const foliage3 = new THREE.Mesh(foliageGeometry3, foliageMaterial);
-    foliage3.position.y = 9;
-    foliage3.castShadow = true;
-    foliage3.receiveShadow = true;
-    tree.add(foliage3);
-    
-    tree.position.set(x, 0, z);
-    // Add some random rotation for variety
-    tree.rotation.y = Math.random() * Math.PI * 2;
-    this.mesh.add(tree);
-  }
-  
-  createTireStack(x: number, z: number) {
-    const tireStack = new THREE.Group();
-    const tireMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0x111111,
-      roughness: 0.9
-    });
-    
-    // Create a stack of tires (3 layers)
-    const tireGeometry = new THREE.TorusGeometry(1, 0.4, 8, 24);
-    
-    // Bottom layer (4 tires)
-    for (let i = 0; i < 4; i++) {
-      const angle = (i / 4) * Math.PI * 2;
-      const tire = new THREE.Mesh(tireGeometry, tireMaterial);
-      tire.position.set(Math.cos(angle) * 0.2, 0.4, Math.sin(angle) * 0.2);
-      tire.rotation.x = Math.PI / 2;
-      tire.castShadow = true;
-      tire.receiveShadow = true;
-      tireStack.add(tire);
-    }
-    
-    // Middle layer (3 tires)
-    for (let i = 0; i < 3; i++) {
-      const angle = (i / 3) * Math.PI * 2;
-      const tire = new THREE.Mesh(tireGeometry, tireMaterial);
-      tire.position.set(Math.cos(angle) * 0.15, 1.2, Math.sin(angle) * 0.15);
-      tire.rotation.x = Math.PI / 2;
-      tire.castShadow = true;
-      tire.receiveShadow = true;
-      tireStack.add(tire);
-    }
-    
-    // Top layer (2 tires)
-    for (let i = 0; i < 2; i++) {
-      const angle = (i / 2) * Math.PI * 2;
-      const tire = new THREE.Mesh(tireGeometry, tireMaterial);
-      tire.position.set(Math.cos(angle) * 0.1, 2.0, Math.sin(angle) * 0.1);
-      tire.rotation.x = Math.PI / 2;
-      tire.castShadow = true;
-      tire.receiveShadow = true;
-      tireStack.add(tire);
-    }
-    
-    tireStack.position.set(x, 0, z);
-    this.mesh.add(tireStack);
   }
 }

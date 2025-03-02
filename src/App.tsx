@@ -9,9 +9,9 @@ function App() {
     return (
       <div className="min-h-screen bg-gradient-to-b from-blue-900 to-black flex items-center justify-center">
         <div className="bg-white bg-opacity-10 backdrop-blur-md p-8 rounded-lg shadow-2xl text-center max-w-md w-full">
-          <h1 className="text-4xl font-bold text-white mb-6">Asphalt Racing</h1>
+          <h1 className="text-4xl font-bold text-white mb-6">Casual Racing</h1>
           <p className="text-gray-200 mb-8">
-            Experience high-speed racing action on a professional asphalt track with realistic physics and stunning visuals.
+            Experience high-speed racing action on a professional Casual track with realistic physics and stunning visuals.
           </p>
           <div className="space-y-4">
             <button 

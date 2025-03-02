@@ -28,9 +28,13 @@ const RacingGame: React.FC = () => {
   const crossedStartLineRef = useRef(false);
   const [nitroLevel, setNitroLevel] = useState(100);
   const [missileCount, setMissileCount] = useState(3);
+  const [carColor, setCarColor] = useState(0xff0000);
 
   useEffect(() => {
     if (!mountRef.current) return;
+
+    // Create AudioContext for later use
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
 
     // Initialize scene
     const scene = new THREE.Scene();
@@ -83,15 +87,20 @@ const RacingGame: React.FC = () => {
     scene.add(blueLight);
 
     // Initialize track
-    const track = new Track();
+    const track = new Track(scene);
     scene.add(track.mesh);
     trackRef.current = track;
 
-    // Initialize car
+    // Initialize car at start position
     const car = new Car();
+    car.mesh.position.copy(track.startPosition);
+    car.setCarColor(carColor);
     scene.add(car.mesh);
     carRef.current = car;
     lastPositionRef.current = car.mesh.position.clone();
+
+    // Create nitro effect
+    car.createNitroEffect();
 
     // Initialize controls
     const controls = new GameControls();
@@ -109,7 +118,15 @@ const RacingGame: React.FC = () => {
       }
     };
 
+    // Add headlight toggle
+    const handleHeadlights = (event: KeyboardEvent) => {
+      if (event.key === 'l' || event.key === 'L') {
+        car.toggleHeadlights();
+      }
+    };
+
     document.addEventListener('keydown', handleCameraSwitch);
+    document.addEventListener('keydown', handleHeadlights);
 
     // Handle window resize
     const handleResize = () => {
@@ -124,11 +141,19 @@ const RacingGame: React.FC = () => {
 
     // Animation loop
     const animate = (time: number) => {
-      if (!carRef.current || !controlsRef.current || !cameraRef.current || !rendererRef.current || !sceneRef.current) return;
+      if (!carRef.current || !controlsRef.current || !cameraRef.current || 
+          !rendererRef.current || !sceneRef.current || !trackRef.current) return;
 
-      // Update car position based on controls
+      // Update car position
       carRef.current.update(controlsRef.current, sceneRef.current);
-      
+
+      // Check if track needs to be updated
+      if (trackRef.current.updateInfiniteTrack(carRef.current.mesh.position)) {
+        // Update camera position after track update
+        const segmentLength = trackRef.current.getSegmentLength();
+        lastPositionRef.current.z += segmentLength;
+      }
+
       // Update speed display
       setSpeed(Math.abs(carRef.current.speed) * 500); // Scale for display
 
@@ -152,6 +177,33 @@ const RacingGame: React.FC = () => {
       
       animationFrameRef.current = requestAnimationFrame(animate);
     };
+
+    // Start game with user interaction
+    const startGame = async () => {
+      // Resume AudioContext if it was suspended
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume();
+      }
+      
+      // Play engine start sound only after user interaction
+      if (carRef.current?.engineStartSound) {
+        try {
+          await carRef.current.engineStartSound.play();
+        } catch (error) {
+          console.warn('Could not play engine start sound:', error);
+        }
+      }
+
+      animationFrameRef.current = requestAnimationFrame(animate);
+    };
+
+    // Add click handler to start game
+    const handleStart = () => {
+      startGame().catch(console.error);
+      mountRef.current?.removeEventListener('click', handleStart);
+    };
+
+    mountRef.current.addEventListener('click', handleStart);
 
     const updateCameraPosition = () => {
       if (!carRef.current || !cameraRef.current) return;
@@ -246,6 +298,7 @@ const RacingGame: React.FC = () => {
     return () => {
       window.removeEventListener('resize', handleResize);
       document.removeEventListener('keydown', handleCameraSwitch);
+      document.removeEventListener('keydown', handleHeadlights);
       
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
@@ -258,8 +311,11 @@ const RacingGame: React.FC = () => {
       if (rendererRef.current) {
         rendererRef.current.dispose();
       }
+
+      mountRef.current?.removeEventListener('click', handleStart);
+      audioContext.close().catch(console.error);
     };
-  }, [cameraView]);
+  }, [cameraView, carColor]);
 
   const handleCameraChange = (view: CameraView) => {
     setCameraView(view);
@@ -319,6 +375,22 @@ const RacingGame: React.FC = () => {
               >
                 <Camera size={14} className="mr-1" /> Cinematic
               </button>
+            </div>
+          </div>
+          <div className="mt-4">
+            <label className="block text-sm font-medium mb-2">Car Color</label>
+            <div className="flex space-x-2">
+              {[0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff].map((color) => (
+                <button
+                  key={color}
+                  className={`w-8 h-8 rounded-full ${carColor === color ? 'ring-2 ring-white' : ''}`}
+                  style={{ backgroundColor: `#${color.toString(16).padStart(6, '0')}` }}
+                  onClick={() => {
+                    setCarColor(color);
+                    carRef.current?.setCarColor(color);
+                  }}
+                />
+              ))}
             </div>
           </div>
         </div>
