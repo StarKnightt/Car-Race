@@ -4,11 +4,16 @@ import { Car } from '../game/Car';
 import { Track } from '../game/Track';
 import { GameControls } from '../game/GameControls';
 import { Camera, Maximize2, Minimize2, Gauge, Trophy, Zap, Target } from 'lucide-react';
+import { AssetManager } from '../game/AssetManager';
 
 // Define camera types
 type CameraView = 'follow' | 'cockpit' | 'overhead' | 'cinematic';
 
-const RacingGame: React.FC = () => {
+interface RacingGameProps {
+  assetManager: AssetManager;
+}
+
+const RacingGame: React.FC<RacingGameProps> = ({ assetManager }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -34,57 +39,8 @@ const RacingGame: React.FC = () => {
   useEffect(() => {
     if (!mountRef.current) return;
 
-    // Preload essential textures from your public directory
-    const textureLoader = new THREE.TextureLoader();
-    const preloadTextures = () => {
-      // Define textures to preload with proper paths
-      const texturesToPreload = [
-        '/textures/track/Asphalt_004_COLOR.jpg',
-        '/textures/track/Asphalt_004_NRM.jpg',
-        '/textures/ground/Substance_Graph_BaseColor.jpg',
-        '/textures/particles/flame.png'
-      ];
-      
-      // Load all textures
-      texturesToPreload.forEach(texturePath => {
-        textureLoader.load(texturePath, 
-          texture => {
-            THREE.Cache.add(texturePath, texture);
-            console.log(`Preloaded: ${texturePath}`);
-          },
-          undefined,
-          error => console.warn(`Failed to preload texture: ${texturePath}`, error)
-        );
-      });
-      
-      // Create additional procedural textures as fallbacks
-      const createProceduralTexture = (color: string, name: string) => {
-        const canvas = document.createElement('canvas');
-        canvas.width = 256;
-        canvas.height = 256;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.fillStyle = color;
-          ctx.fillRect(0, 0, 256, 256);
-          
-          // Store in cache
-          const texture = new THREE.CanvasTexture(canvas);
-          THREE.Cache.add(name, texture);
-        }
-      };
-      
-      // Create fallbacks just in case
-      createProceduralTexture('#333333', 'road-fallback');
-      createProceduralTexture('#ffffff', 'flare-fallback');
-      createProceduralTexture('#ffaa00', 'flame-fallback');
-    };
-    
-    preloadTextures();
-
-    // Create silent audio context to be ready for user interaction
     try {
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-      // Immediately suspend it until user interaction
       if (audioContextRef.current.state === 'running') {
         audioContextRef.current.suspend().catch(console.error);
       }
@@ -92,18 +48,15 @@ const RacingGame: React.FC = () => {
       console.warn('Audio context not supported:', e);
     }
 
-    // Error handling for the game components
     let gameInitialized = false;
     let engineStarted = false;
 
     try {
-      // Initialize scene
       const scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x87ceeb); // Sky blue background
-      scene.fog = new THREE.Fog(0x87ceeb, 50, 150); // Add fog for depth
+      scene.background = new THREE.Color(0x87ceeb);
+      scene.fog = new THREE.Fog(0x87ceeb, 50, 150);
       sceneRef.current = scene;
 
-      // Initialize camera
       const camera = new THREE.PerspectiveCamera(
         75,
         window.innerWidth / window.innerHeight,
@@ -113,14 +66,13 @@ const RacingGame: React.FC = () => {
       camera.position.set(0, 5, 10);
       cameraRef.current = camera;
 
-      // Initialize renderer
       const renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       mountRef.current.appendChild(renderer.domElement);
       rendererRef.current = renderer;
-      // Add lighting
+
       const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
       scene.add(ambientLight);
 
@@ -137,7 +89,6 @@ const RacingGame: React.FC = () => {
       directionalLight.shadow.camera.bottom = -100;
       scene.add(directionalLight);
 
-      // Add some point lights for better lighting
       const redLight = new THREE.PointLight(0xff0000, 1, 50);
       redLight.position.set(40, 10, 40);
       scene.add(redLight);
@@ -146,7 +97,6 @@ const RacingGame: React.FC = () => {
       blueLight.position.set(-40, 10, -40);
       scene.add(blueLight);
 
-      // Initialize track with error handling
       try {
         const track = new Track(scene);
         scene.add(track.mesh);
@@ -157,7 +107,6 @@ const RacingGame: React.FC = () => {
         scene.add(fallbackTrack);
       }
 
-      // Initialize car at start position
       try {
         const car = new Car();
         const trackStart = trackRef.current?.startPosition || new THREE.Vector3(0, 0, -35);
@@ -167,7 +116,6 @@ const RacingGame: React.FC = () => {
         carRef.current = car;
         lastPositionRef.current = car.mesh.position.clone();
 
-        // Create nitro effect
         car.createNitroEffect();
       } catch (error) {
         console.error('Failed to initialize car:', error);
@@ -175,11 +123,9 @@ const RacingGame: React.FC = () => {
         scene.add(fallbackCar);
       }
 
-      // Initialize controls
       const controls = new GameControls();
       controlsRef.current = controls;
 
-      // Add camera switch key listener
       const handleCameraSwitch = (event: KeyboardEvent) => {
         if (event.key === 'c' || event.key === 'C') {
           setCameraView(prev => {
@@ -191,7 +137,6 @@ const RacingGame: React.FC = () => {
         }
       };
 
-      // Add headlight toggle
       const handleHeadlights = (event: KeyboardEvent) => {
         if ((event.key === 'l' || event.key === 'L') && carRef.current) {
           carRef.current.toggleHeadlights();
@@ -201,7 +146,6 @@ const RacingGame: React.FC = () => {
       document.addEventListener('keydown', handleCameraSwitch);
       document.addEventListener('keydown', handleHeadlights);
 
-      // Handle window resize
       const handleResize = () => {
         if (!cameraRef.current || !rendererRef.current) return;
         
@@ -212,57 +156,43 @@ const RacingGame: React.FC = () => {
 
       window.addEventListener('resize', handleResize);
 
-      // Animation loop
       const animate = (time: number) => {
         if (!carRef.current || !controlsRef.current || !cameraRef.current || 
             !rendererRef.current || !sceneRef.current || !trackRef.current) return;
 
-        // Update car position
         carRef.current.update(controlsRef.current, sceneRef.current);
 
-        // Check if track needs to be updated
         if (trackRef.current.updateInfiniteTrack(carRef.current.mesh.position)) {
-          // Update camera position after track update
           const segmentLength = trackRef.current.getSegmentLength();
           lastPositionRef.current.z += segmentLength;
         }
 
-        // Update speed display
-        setSpeed(Math.abs(carRef.current.speed) * 500); // Scale for display
+        setSpeed(Math.abs(carRef.current.speed) * 500);
 
-        // Update camera based on selected view
         updateCameraPosition();
         
-        // Check for lap completion
         checkLapCompletion(time);
         
-        // Update lap timer
         if (lapStartTimeRef.current !== null) {
           setLapTime(time - lapStartTimeRef.current);
         }
 
-        // Update UI states
         setNitroLevel(carRef.current.nitroCharge);
         setMissileCount(carRef.current.missileCount);
 
-        // Update engine sound
         if (carRef.current?.engineSound) {
           try {
-            // Check if the engine sound is properly loaded
             if (carRef.current.engineSound.paused) {
-              // Try to play the engine sound
               const playPromise = carRef.current.engineSound.play();
               if (playPromise !== undefined) {
                 playPromise.catch(error => {
                   console.warn('Failed to play engine sound:', error);
                   
-                  // If the original source failed, try setting it directly
                   if (carRef.current && carRef.current.engineSound && 
                       !carRef.current.engineSound.src.includes('engine-loop')) {
                     console.log('Trying with direct path for engine sound');
                     carRef.current.engineSound.src = '/audio/engine-loop.mp3';
                     
-                    // Try playing again after a short delay
                     setTimeout(() => {
                       if (carRef.current?.engineSound) {
                         carRef.current.engineSound.play().catch(e => 
@@ -279,24 +209,19 @@ const RacingGame: React.FC = () => {
           }
         }
 
-        // Render scene
         rendererRef.current.render(sceneRef.current, cameraRef.current);
         
         animationFrameRef.current = requestAnimationFrame(animate);
       };
 
-      // Start game with user interaction
       const startGame = async () => {
-        // Resume AudioContext if it was suspended and exists
         if (audioContextRef.current) {
           try {
             await audioContextRef.current.resume();
             console.log('Audio context resumed successfully');
             
-            // Preload audio files after context is resumed
             preloadAudio();
             
-            // Create a simple startup sound
             const oscillator = audioContextRef.current.createOscillator();
             const gainNode = audioContextRef.current.createGain();
             
@@ -318,13 +243,10 @@ const RacingGame: React.FC = () => {
           }
         }
         
-        // Start the game animation
         animationFrameRef.current = requestAnimationFrame(animate);
         
-        // Try to play the engine start sound immediately upon start
         if (carRef.current?.engineStartSound) {
           try {
-            // Make sure the src is set correctly
             if (!carRef.current.engineStartSound.src || !carRef.current.engineStartSound.src.includes('engine-start')) {
               carRef.current.engineStartSound.src = '/audio/engine-start.mp3';
             }
@@ -333,7 +255,6 @@ const RacingGame: React.FC = () => {
             if (playPromise !== undefined) {
               playPromise.catch(error => {
                 console.warn('Could not play engine start sound:', error);
-                // Create a fallback sound with Web Audio API
                 playEngineStartFallback(audioContextRef.current);
               });
             }
@@ -342,12 +263,10 @@ const RacingGame: React.FC = () => {
             playEngineStartFallback(audioContextRef.current);
           }
         } else {
-          // No engine start sound available, use fallback
           playEngineStartFallback(audioContextRef.current);
         }
       };
 
-      // Helper function to play a fallback engine start sound
       const playEngineStartFallback = (audioCtx: AudioContext | null) => {
         if (!audioCtx) return;
         
@@ -369,15 +288,11 @@ const RacingGame: React.FC = () => {
           oscillator.start();
           oscillator.stop(audioCtx.currentTime + 1.5);
         } catch (e) {
-          // Silent fail for audio fallback
         }
       };
 
-      // Add click handler to start game
       const handleStart = () => {
-        // Setup audio first
         setupAudio();
-        // Then start the game
         startGame().catch(console.error);
         mountRef.current?.removeEventListener('click', handleStart);
       };
@@ -393,7 +308,6 @@ const RacingGame: React.FC = () => {
         
         switch (cameraView) {
           case 'follow':
-            // Third-person follow camera
             const followOffset = new THREE.Vector3(0, 3, 8);
             followOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), carRotation);
             cameraRef.current.position.copy(carPosition).add(followOffset);
@@ -401,12 +315,10 @@ const RacingGame: React.FC = () => {
             break;
             
           case 'cockpit':
-            // First-person cockpit view
             const cockpitOffset = new THREE.Vector3(0, 1.2, -0.5);
             cockpitOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), carRotation);
             cameraRef.current.position.copy(carPosition).add(cockpitOffset);
             
-            // Look in the direction the car is facing
             const lookTarget = carPosition.clone().add(
               carDirection.clone().multiplyScalar(10)
             );
@@ -414,13 +326,11 @@ const RacingGame: React.FC = () => {
             break;
             
           case 'overhead':
-            // Top-down view
             cameraRef.current.position.set(carPosition.x, 20, carPosition.z);
             cameraRef.current.lookAt(carPosition);
             break;
             
           case 'cinematic':
-            // Cinematic rotating camera
             cinematicAngleRef.current += 0.005;
             const radius = 15;
             const height = 5;
@@ -438,42 +348,31 @@ const RacingGame: React.FC = () => {
         const carPosition = carRef.current.mesh.position;
         const lastPosition = lastPositionRef.current;
         
-        // Check if car crossed the start/finish line
-        // The line is at z = -40 (approximately)
         if (lastPosition.z < -39 && carPosition.z >= -39) {
-          // Car crossed the line going forward
           if (!crossedStartLineRef.current) {
             crossedStartLineRef.current = true;
             
-            // If this is the first crossing, start the timer
             if (lapStartTimeRef.current === null) {
               lapStartTimeRef.current = time;
             } else {
-              // Complete a lap
               const lapTimeValue = time - lapStartTimeRef.current;
               
-              // Update best lap time
               if (bestLapTime === null || lapTimeValue < bestLapTime) {
                 setBestLapTime(lapTimeValue);
               }
               
-              // Reset lap timer
               lapStartTimeRef.current = time;
             }
           }
         } else if (lastPosition.z > -41 && carPosition.z <= -41) {
-          // Car crossed the line going backward
           crossedStartLineRef.current = false;
         }
         
-        // Update last position
         lastPositionRef.current = carPosition.clone();
       };
 
-      // Start animation loop
       animationFrameRef.current = requestAnimationFrame(animate);
 
-      // Cleanup function
       return () => {
         window.removeEventListener('resize', handleResize);
         document.removeEventListener('keydown', handleCameraSwitch);
@@ -496,15 +395,13 @@ const RacingGame: React.FC = () => {
       };
     } catch (error) {
       console.error('Fatal error initializing the game:', error);
-      return () => {}; // Empty cleanup if initialization failed
+      return () => {};
     }
   }, [cameraView, carColor]);
 
-  // Helper function to create fallback objects when loading fails
   const createFallbackTrack = () => {
     const fallbackTrack = new THREE.Group();
     
-    // Simple ground plane
     const groundGeometry = new THREE.PlaneGeometry(100, 100);
     const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x2d5a27 });
     const ground = new THREE.Mesh(groundGeometry, groundMaterial);
@@ -512,7 +409,6 @@ const RacingGame: React.FC = () => {
     ground.receiveShadow = true;
     fallbackTrack.add(ground);
     
-    // Simple road
     const roadGeometry = new THREE.PlaneGeometry(10, 100);
     const roadMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
     const road = new THREE.Mesh(roadGeometry, roadMaterial);
@@ -526,14 +422,12 @@ const RacingGame: React.FC = () => {
   const createFallbackCar = () => {
     const fallbackCar = new THREE.Group();
     
-    // Simple car body
     const bodyGeometry = new THREE.BoxGeometry(1.8, 0.5, 4);
     const bodyMaterial = new THREE.MeshStandardMaterial({ color: carColor });
     const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
     body.position.y = 0.5;
     fallbackCar.add(body);
     
-    // Position at start
     fallbackCar.position.set(0, 0, -35);
     
     return fallbackCar;
@@ -543,7 +437,6 @@ const RacingGame: React.FC = () => {
     setCameraView(view);
   };
   
-  // Format time in mm:ss.ms format
   const formatTime = (timeMs: number) => {
     const totalSeconds = timeMs / 1000;
     const minutes = Math.floor(totalSeconds / 60);
@@ -553,7 +446,6 @@ const RacingGame: React.FC = () => {
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${milliseconds.toString().padStart(3, '0')}`;
   };
 
-  // Add this function to preload audio files
   const preloadAudio = () => {
     const audioFiles = [
       '/audio/engine-loop.mp3',
@@ -564,14 +456,12 @@ const RacingGame: React.FC = () => {
       '/audio/missile.mp3'
     ];
     
-    // Create audio elements for each file and force preload
     audioFiles.forEach(file => {
       try {
         const audio = new Audio();
         audio.src = file;
         audio.preload = 'auto';
         
-        // Force load by playing at zero volume and immediately pausing
         audio.volume = 0;
         const playPromise = audio.play();
         
@@ -589,13 +479,11 @@ const RacingGame: React.FC = () => {
     });
   };
 
-  // Call this function after user interaction
   const setupAudio = () => {
     try {
       if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
         audioContextRef.current.resume().then(() => {
           console.log('Audio context resumed successfully');
-          // Preload audio files after context is resumed
           preloadAudio();
         }).catch(error => {
           console.error('Failed to resume audio context:', error);
