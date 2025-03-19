@@ -1,85 +1,73 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import RacingGame from './components/RacingGame';
-import LoadingScreen from './components/LoadingScreen';
-import { AssetManager } from './game/AssetManager';
-
-// Create a singleton instance of AssetManager
-const assetManager = new AssetManager();
+import { Play, Settings, Camera, Trophy } from 'lucide-react';
 
 function App() {
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadingProgress, setLoadingProgress] = useState(0);
-  const [loadingStatus, setLoadingStatus] = useState('Initializing...');
-  const [loadingErrors, setLoadingErrors] = useState<string[]>([]);
+  const [gameStarted, setGameStarted] = useState(false);
+  const [showAudioNote, setShowAudioNote] = useState(true);
 
-  useEffect(() => {
-    const preloadAssets = async () => {
-      try {
-        // Set total number of assets to load
-        const totalAssets = 15; // Update this number based on actual assets
-        assetManager.setTotalAssets(totalAssets);
-        setLoadingStatus('Loading textures...');
-
-        // Preload textures
-        const textureUrls = [
-          '/textures/track/Asphalt_004_COLOR.jpg',
-          '/textures/track/Asphalt_004_NRM.jpg',
-          '/textures/track/Asphalt_004_ROUGH.jpg',
-          '/textures/ground/Substance_Graph_BaseColor.jpg',
-          '/textures/ground/Substance_Graph_Normal.jpg',
-          '/textures/particles/flame.png'
-        ];
-
-        for (const url of textureUrls) {
-          await assetManager.loadTexture(url);
-          setLoadingProgress(assetManager.getProgress());
-        }
-
-        setLoadingStatus('Loading audio...');
-
-        // Preload audio
-        const audioUrls = [
-          '/audio/engine-loop.mp3',
-          '/audio/engine-start.mp3',
-          '/audio/turbo.mp3',
-          '/audio/engine-rev.mp3',
-          '/audio/nitro.mp3',
-          '/audio/missile.mp3'
-        ];
-
-        for (const url of audioUrls) {
-          await assetManager.loadAudio(url);
-          setLoadingProgress(assetManager.getProgress());
-        }
-
-        // Check for any errors
-        const errors = assetManager.getErrors();
-        if (errors.length > 0) {
-          setLoadingErrors(errors);
-        }
-
-        setLoadingStatus('Ready!');
-        setTimeout(() => setIsLoading(false), 500); // Short delay for smooth transition
-      } catch (error) {
-        console.error('Error loading assets:', error);
-        setLoadingErrors(prev => [...prev, 'Failed to load some game assets']);
-      }
-    };
-
-    preloadAssets();
-  }, []);
-
-  if (isLoading) {
+  if (!gameStarted) {
     return (
-      <LoadingScreen
-        progress={loadingProgress}
-        status={loadingStatus}
-        errors={loadingErrors}
-      />
+      <div className="min-h-screen bg-gradient-to-b from-blue-900 to-black flex items-center justify-center">
+        <div className="bg-white bg-opacity-10 backdrop-blur-md p-8 rounded-lg shadow-2xl text-center max-w-md w-full">
+          <h1 className="text-4xl font-bold text-white mb-6">Casual Racing</h1>
+          <p className="text-gray-200 mb-8">
+            Experience high-speed racing action on a professional Casual track with realistic physics and stunning visuals.
+          </p>
+          
+          {showAudioNote && (
+            <div className="bg-blue-500 bg-opacity-30 p-3 rounded-md mb-6">
+              <p className="text-white text-sm">
+                For the best experience, please allow audio permissions when prompted. Click anywhere to start the game.
+                <button 
+                  onClick={() => setShowAudioNote(false)}
+                  className="ml-2 text-blue-300 hover:text-blue-200"
+                >
+                  Dismiss
+                </button>
+              </p>
+            </div>
+          )}
+          
+          <div className="space-y-4">
+            <button 
+              onClick={() => setGameStarted(true)}
+              className="w-full bg-gradient-to-r from-red-600 to-red-800 hover:from-red-700 hover:to-red-900 text-white font-bold py-3 px-6 rounded-lg transition-all duration-200 flex items-center justify-center"
+            >
+              <Play className="mr-2" size={20} />
+              Start Racing
+            </button>
+            <div className="flex justify-between gap-4">
+              <button className="flex-1 bg-gray-700 hover:bg-gray-800 text-white font-bold py-2 px-4 rounded-lg transition-all duration-200 flex items-center justify-center">
+                <Settings className="mr-2" size={16} />
+                Options
+              </button>
+              <button className="flex-1 bg-gray-700 hover:bg-gray-800 text-white font-bold py-2 px-4 rounded-lg transition-all duration-200 flex items-center justify-center">
+                <Camera className="mr-2" size={16} />
+                Camera Views
+              </button>
+              <button className="flex-1 bg-gray-700 hover:bg-gray-800 text-white font-bold py-2 px-4 rounded-lg transition-all duration-200 flex items-center justify-center">
+                <Trophy className="mr-2" size={16} />
+                Leaderboard
+              </button>
+            </div>
+          </div>
+          <div className="mt-8 text-gray-300 text-sm">
+            <h3 className="font-bold mb-2">Controls:</h3>
+            <ul className="text-left space-y-1">
+              <li>WASD or Arrow Keys: Drive</li>
+              <li>Space: Brake</li>
+              <li>C: Change Camera View</li>
+              <li>E: Nitro Boost</li>
+              <li>F: Fire Missile</li>
+            </ul>
+          </div>
+        </div>
+      </div>
     );
   }
 
-  return <RacingGame assetManager={assetManager} />;
+  return <RacingGame />;
 }
 
 export default App;
